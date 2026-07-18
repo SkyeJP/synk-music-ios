@@ -34,11 +34,11 @@ struct AppShell: View {
 
             Group {
                 switch tab {
-                case .home: NavigationStack { HomeView().withRoutes() }
-                case .search: NavigationStack { SearchView().withRoutes() }
-                case .library: NavigationStack { LibraryView().withRoutes() }
-                case .analytics: NavigationStack { AnalyticsView().withRoutes() }
-                case .profile: NavigationStack { ProfileView().withRoutes() }
+                case .home: NavigationStack { HomeView() }
+                case .search: NavigationStack { SearchView() }
+                case .library: NavigationStack { LibraryView() }
+                case .analytics: NavigationStack { AnalyticsView() }
+                case .profile: NavigationStack { ProfileView() }
                 }
             }
             .padding(.bottom, player.current != nil ? 116 : 56)

@@ -20,7 +20,7 @@ open SynkMusic.xcodeproj
 ```
 
 Then select your device/simulator and hit **Run** (⌘R). To run on a physical
-iPhone you must set a **Development Team** under *Signing & Capabilities* (a free
+iPhone you must set a **Development Team** under _Signing & Capabilities_ (a free
 Apple ID works for on-device testing).
 
 ## Command-line build
@@ -31,6 +31,34 @@ xcodebuild -project SynkMusic.xcodeproj -scheme SynkMusic \
   -destination 'generic/platform=iOS Simulator' \
   CODE_SIGNING_ALLOWED=NO build
 ```
+
+## Continuous integration
+
+Both CI systems generate the project with XcodeGen first, since the
+`.xcodeproj` is not committed.
+
+- **GitHub Actions** (`.github/workflows/build.yml`)
+  - `build` — runs on every push/PR to `main`: unsigned simulator build, no
+    secrets required (always green).
+  - `archive` — runs on `main` / manual dispatch: signed device archive + IPA
+    export, uploaded as the `SynkMusic-ipa` artifact. It **no-ops** unless the
+    signing secrets below are set, so absence of secrets never fails the run.
+- **GitLab CI** (`.gitlab-ci.yml`) — mirrors the unsigned simulator build on a
+  runner tagged `macos`, plus secret detection on the shared Linux runners.
+
+### Secrets for signed builds (GitHub → Settings → Secrets → Actions)
+
+| Secret | Description |
+| --- | --- |
+| `BUILD_CERTIFICATE_P12_BASE64` | Base64 of your Apple Development `.p12` |
+| `P12_PASSWORD` | Password for that `.p12` |
+| `PROVISIONING_PROFILE_BASE64` | Base64 of the `.mobileprovision` |
+| `APPLE_TEAM_ID` | 10-char Apple Developer Team ID |
+| `KEYCHAIN_PASSWORD` | Any throwaway password for the temp CI keychain |
+
+Encode files with `base64 -i cert.p12 | pbcopy`. A **free** Apple ID can sign for
+on-device testing, but automated IPA export in CI needs a real certificate +
+profile; without them, use Xcode locally (⌘R) to run on your iPhone.
 
 ## Project layout
 

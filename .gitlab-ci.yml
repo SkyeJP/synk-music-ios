@@ -6,7 +6,7 @@ stages:
   - secret-detection
 
 variables:
-  SECRET_DETECTION_ENABLED: 'true'
+  SECRET_DETECTION_ENABLED: "true"
 
 build:ios:
   stage: build
