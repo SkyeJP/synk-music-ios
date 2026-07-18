@@ -10,8 +10,8 @@ and the Android (Compose) app. Talks to the SYNK API at `https://api.synkmusic.x
     **iOS 27 (e.g. iPhone 17) requires Xcode 27** (which ships the iOS 27 SDK).
     Xcode 16 tops out around iOS 18 and cannot install to an iOS 27 device.
 - [XcodeGen](https://github.com/yonwoo9/XcodeGen) — `brew install xcodegen`.
-- Deployment target is iOS 17.0, so the app *runs on* iOS 17+, but the SDK used
-  to *build for a device* must be ≥ that device's OS.
+- Deployment target is iOS 17.0, so the app _runs on_ iOS 17+, but the SDK used
+  to _build for a device_ must be ≥ that device's OS.
 
 ## Generating the Xcode project
 
@@ -41,29 +41,27 @@ xcodebuild -project SynkMusic.xcodeproj -scheme SynkMusic \
 Both CI systems generate the project with XcodeGen first, since the
 `.xcodeproj` is not committed.
 
-- **GitHub Actions** (`.github/workflows/build.yml`) — runs on the `macos-26`
-  image and selects **Xcode 27** (the SDK needed for iOS 27 devices).
-  - `build` — runs on every push/PR to `main`: unsigned simulator build, no
-    secrets required (always green).
-  - `archive` — runs on `main` / manual dispatch: signed device archive + IPA
-    export, uploaded as the `SynkMusic-ipa` artifact. It **no-ops** unless the
-    signing secrets below are set, so absence of secrets never fails the run.
+- **GitHub Actions** (`.github/workflows/build.yml`) — runs on `macos-26`.
+  - `build` — every push/PR to `main`: unsigned simulator compile with the
+    **newest Xcode on the runner** (currently Xcode 26.x). No secrets required.
+  - `archive` — `main` / manual dispatch: signed device archive + IPA export
+    for an **iOS 27** device, uploaded as `SynkMusic-ipa`. This job needs
+    **Xcode 27**, which isn't on `macos-26` yet — until it lands, the job
+    **skips itself cleanly** (green run, notice in the log) instead of failing.
+    It also skips when the signing secrets below are absent.
 
-  > `macos-26` + `xcode-27` are currently **preview** runner images. If a job
-  > can't find Xcode 27, GitHub hasn't GA'd it on that image yet — bump to the
-  > newest available macOS image once it ships.
 - **GitLab CI** (`.gitlab-ci.yml`) — mirrors the unsigned simulator build on a
   runner tagged `macos`, plus secret detection on the shared Linux runners.
 
 ### Secrets for signed builds (GitHub → Settings → Secrets → Actions)
 
-| Secret | Description |
-| --- | --- |
-| `BUILD_CERTIFICATE_P12_BASE64` | Base64 of your Apple Development `.p12` |
-| `P12_PASSWORD` | Password for that `.p12` |
-| `PROVISIONING_PROFILE_BASE64` | Base64 of the `.mobileprovision` |
-| `APPLE_TEAM_ID` | 10-char Apple Developer Team ID |
-| `KEYCHAIN_PASSWORD` | Any throwaway password for the temp CI keychain |
+| Secret                         | Description                                     |
+| ------------------------------ | ----------------------------------------------- |
+| `BUILD_CERTIFICATE_P12_BASE64` | Base64 of your Apple Development `.p12`         |
+| `P12_PASSWORD`                 | Password for that `.p12`                        |
+| `PROVISIONING_PROFILE_BASE64`  | Base64 of the `.mobileprovision`                |
+| `APPLE_TEAM_ID`                | 10-char Apple Developer Team ID                 |
+| `KEYCHAIN_PASSWORD`            | Any throwaway password for the temp CI keychain |
 
 Encode files with `base64 -i cert.p12 | pbcopy`. A **free** Apple ID can sign for
 on-device testing, but automated IPA export in CI needs a real certificate +
