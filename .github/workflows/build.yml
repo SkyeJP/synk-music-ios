@@ -20,12 +20,20 @@ jobs:
   # needs no Apple account or secrets. This is the gate for PRs.
   build:
     name: Build (simulator, unsigned)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+      - name: Select Xcode 27
+        run: |
+          APP=$(ls -d /Applications/Xcode_27* 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APP" ]; then
+            echo "::error::Xcode 27 not found on this runner; iOS 27 device builds need it."
+            ls -d /Applications/Xcode_* || true
+            exit 1
+          fi
+          sudo xcode-select -s "$APP/Contents/Developer"
+          xcodebuild -version
 
       - name: Install tooling
         run: brew install xcodegen xcbeautify
@@ -49,7 +57,7 @@ jobs:
   # no-ops cleanly when signing secrets are absent so it never fails the run.
   archive:
     name: Archive & export IPA (signed)
-    runs-on: macos-15
+    runs-on: macos-26
     needs: build
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
@@ -69,9 +77,16 @@ jobs:
             echo "::notice::Signing secrets not set; skipping the signed IPA export."
           fi
 
-      - name: Select Xcode
+      - name: Select Xcode 27
         if: steps.secrets.outputs.ready == 'true'
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+        run: |
+          APP=$(ls -d /Applications/Xcode_27* 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APP" ]; then
+            echo "::error::Xcode 27 not found on this runner."
+            exit 1
+          fi
+          sudo xcode-select -s "$APP/Contents/Developer"
+          xcodebuild -version
 
       - name: Install tooling
         if: steps.secrets.outputs.ready == 'true'
