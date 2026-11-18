@@ -139,6 +139,11 @@ struct LyricsContent: View {
     @State private var items: [LyricItem] = []
     @State private var heights: [Int: CGFloat] = [:]
     @State private var viewport: CGFloat = 0
+    @State private var manual: CGFloat = 0
+    @State private var dragStart: CGFloat = 0
+    @State private var frozen: CGFloat?
+    @State private var dragging = false
+    @State private var released = Date()
 
     var body: some View {
         Group {
@@ -171,6 +176,9 @@ struct LyricsContent: View {
         var above: CGFloat = 0
         for i in 0..<active { above += heights[i] ?? 0 }
         let target = viewport * anchor - above
+        let base = frozen ?? target
+        let total = heights.values.reduce(0, +)
+        let free = frozen != nil
         return GeometryReader { g in
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, item in
@@ -179,12 +187,13 @@ struct LyricsContent: View {
                     let near = abs(d) <= 1
                     itemView(item, index: i, active: i == active, now: (near || isDots(item)) ? now : (d < 0 ? Int.max / 4 : -1), dist: dist)
                         .background(GeometryReader { h in Color.clear.preference(key: HeightsKey.self, value: [i: h.size.height]) })
-                        .blur(radius: synced && abs(d) < 12 ? min(4, max(0, (dist - 1) * 1.2)) : (synced ? 4 : 0))
+                        .blur(radius: !synced || free ? 0 : abs(d) < 12 ? min(4, max(0, (dist - 1) * 1.2)) : 4)
                         .animation(.easeInOut(duration: 0.4), value: active)
                 }
             }
-            .offset(y: target)
+            .offset(y: base + manual)
             .animation(.spring(response: 0.55, dampingFraction: 0.9), value: active)
+            .animation(.easeInOut(duration: 0.3), value: free)
             .padding(.horizontal, 24)
             .frame(width: g.size.width, alignment: .topLeading)
             .onAppear { viewport = g.size.height }
@@ -192,7 +201,37 @@ struct LyricsContent: View {
         }
         .clipped()
         .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 8)
+                .onChanged { v in
+                    if !dragging {
+                        dragging = true
+                        if frozen == nil { frozen = target; manual = 0 }
+                        dragStart = manual
+                    }
+                    manual = clampManual(dragStart + v.translation.height, base: frozen ?? target, total: total)
+                }
+                .onEnded { v in
+                    dragging = false
+                    let end = clampManual(dragStart + v.predictedEndTranslation.height, base: frozen ?? target, total: total)
+                    withAnimation(.easeOut(duration: 0.45)) { manual = end }
+                    released = Date()
+                }
+        )
+        .task(id: released) {
+            guard frozen != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, !dragging else { return }
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.9)) { frozen = nil; manual = 0 }
+        }
         .onPreferenceChange(HeightsKey.self) { v in MainActor.assumeIsolated { heights = v } }
+    }
+
+    private func clampManual(_ m: CGFloat, base: CGFloat, total: CGFloat) -> CGFloat {
+        let top = viewport * anchor
+        let lo = top - total - base
+        let hi = top + viewport * 0.4 - base
+        return min(max(m, min(lo, hi)), hi)
     }
 
     private func isDots(_ item: LyricItem) -> Bool {
@@ -207,7 +246,8 @@ struct LyricsContent: View {
             DotsView(start: s, end: e, now: now)
         case .line(let l, _, let end, let bgStart):
             LineView(line: l, end: end, bgStart: bgStart, synced: synced, isActive: active, now: now,
-                     dim: max(0.14, dimBase - max(0, dist - 1) * 0.02), size: textSize, onSeek: onSeek)
+                     dim: max(0.14, dimBase - max(0, dist - 1) * 0.02), size: textSize,
+                     onSeek: onSeek.map { seek in { (ms: Int) -> Void in withAnimation(.spring(response: 0.6, dampingFraction: 0.9)) { frozen = nil; manual = 0 }; seek(ms) } })
                 .equatable()
                 .padding(.bottom, 22)
         }
