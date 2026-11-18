@@ -13,6 +13,7 @@ enum Theme {
     static let lineStrong = Color.white.opacity(0.16)
     static let hairline = Color.white.opacity(0.14)
     static let fg = Color.white
+    static let tabBlue = Color(hex: 0x0A84FF)
     static let muted = Color(hex: 0xB3B3B3)
     static let faint = Color(hex: 0x8A8A8A)
     static let bone = Color(hex: 0xECE9E4)

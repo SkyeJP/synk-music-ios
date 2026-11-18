@@ -121,7 +121,6 @@ struct CollectionPage<MenuItems: View>: View {
         .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.y + g.contentInsets.top > width * 1.05 } action: { _, now in
             if now != scrolled { withAnimation(.easeOut(duration: 0.18)) { scrolled = now } }
         }
-        .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {

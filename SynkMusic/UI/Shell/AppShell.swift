@@ -102,13 +102,13 @@ struct AppShell: View {
         let view = TabView(selection: $tab) {
             ForEach(ShellTab.allCases, id: \.self) { t in
                 Tab(value: t, role: t == .search ? .search : nil) {
-                    stack(t, hasTrack: hasTrack)
+                    stack(t, hasTrack: hasTrack).tint(Theme.fg)
                 } label: {
                     Label { Text(t.label) } icon: { Image(uiImage: t.icon.image(24)) }
                 }
             }
         }
-        .tint(Theme.fg)
+        .tint(Theme.tabBlue)
         if #available(iOS 26.0, *) {
             if hasTrack {
                 view
