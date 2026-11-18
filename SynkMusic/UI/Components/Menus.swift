@@ -151,8 +151,7 @@ struct PlaylistMenuItems: View {
     var folder: String?
     @Binding var sort: PlaylistSort
     let onPin: () -> Void
-    let onMove: (String?) -> Void
-    let onNewFolder: () -> Void
+    let onMove: () -> Void
     let onEdit: () -> Void
     let onCollaborate: () -> Void
     let onDelete: () -> Void
@@ -186,20 +185,7 @@ struct PlaylistMenuItems: View {
                 Label("Sort By", systemImage: "arrow.up.arrow.down")
             }
             if isOwner {
-                Menu {
-                    Button(action: onNewFolder) { Label("New Folder", systemImage: "folder.badge.plus") }
-                    let names = LibraryModel.shared.folders.filter { $0 != folder }
-                    if !names.isEmpty {
-                        Divider()
-                        ForEach(names, id: \.self) { f in Button { onMove(f) } label: { Label(f, systemImage: "folder") } }
-                    }
-                    if folder != nil {
-                        Divider()
-                        Button { onMove(nil) } label: { Label("Remove from Folder", systemImage: "folder.badge.minus") }
-                    }
-                } label: {
-                    Label("Move to Folder", systemImage: "folder")
-                }
+                Button(action: onMove) { Label("Move to Folder", systemImage: "folder") }
             }
         }
         Section {

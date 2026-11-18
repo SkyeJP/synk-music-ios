@@ -236,3 +236,76 @@ struct EditPlaylistSheet: View {
         .presentationDetents([.medium, .large])
     }
 }
+
+/// Move "Name" to: your folders (or out of one), searchable, with + for a new folder.
+struct MoveToFolderSheet: View {
+    let name: String
+    let current: String?
+    let onPick: (String?) -> Void
+    @ObservedObject private var lib = LibraryModel.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var naming = false
+    @State private var newName = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Folders") {
+                    if current != nil {
+                        row("tray", "All Playlists (no folder)") { onPick(nil) }
+                    }
+                    ForEach(lib.folders.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }, id: \.self) { f in
+                        row("folder", f, checked: f == current) { if f != current { onPick(f) } else { dismiss() } }
+                    }
+                    if lib.folders.isEmpty {
+                        Text("No folders yet. Tap + to make one.").font(sans: 14).foregroundStyle(Theme.fg.opacity(0.5))
+                            .listRowBackground(Color.clear)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Theme.base)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find in Folders")
+            .navigationTitle("Move \u{201C}\(name)\u{201D} to")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("Cancel")
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button { naming = true } label: { Image(systemName: "plus") }.accessibilityLabel("New Folder")
+                }
+            }
+            .alert("New Folder", isPresented: $naming) {
+                TextField("Folder Name", text: $newName)
+                Button("Cancel", role: .cancel) { newName = "" }
+                Button("Create") {
+                    let f = newName.trimmingCharacters(in: .whitespaces)
+                    newName = ""
+                    if !f.isEmpty { onPick(f) }
+                }
+            } message: {
+                Text("Enter a name for this folder.")
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func row(_ icon: String, _ title: String, checked: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 20)).frame(width: 28)
+                Text(title).font(sans: 17)
+                Spacer()
+                if checked { Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)) }
+            }
+            .foregroundStyle(Theme.fg)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.white.opacity(0.06))
+    }
+}

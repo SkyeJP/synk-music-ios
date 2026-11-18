@@ -636,15 +636,23 @@ struct LibraryPageView: View {
                     }
                 case .playlists:
                     ForEach(lib.folders, id: \.self) { f in
-                        let n = lib.playlists.filter { $0.folder == f }.count
+                        let inside = lib.playlists.filter { $0.folder == f }
+                        let n = inside.count
                         Button { navigate(.folder(f)) } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "folder").font(.system(size: 24)).foregroundStyle(Theme.fg)
-                                    .frame(width: 56, height: 56)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08))
+                                    if let first = inside.first {
+                                        Artwork(url: first.coverUrl, radius: 4).frame(width: 26, height: 26)
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(6)
+                                    } else {
+                                        Image(systemName: "folder").font(.system(size: 22)).foregroundStyle(Theme.fg)
+                                    }
+                                }
+                                .frame(width: 56, height: 56)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(f).font(sans: 17).foregroundStyle(Theme.fg).lineLimit(1)
-                                    Text(Format.plural(n, "playlist", "playlists")).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55))
+                                    Text(Format.plural(n, "Playlist", "Playlists")).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55))
                                 }
                                 Spacer()
                                 SynkIcon(SynkIcons.chevronRight, size: 18, tint: Theme.fg.opacity(0.35))
@@ -763,9 +771,10 @@ struct PlaylistView: View {
     @State private var collaborating = false
     @State private var collaborator = ""
     @State private var note: String?
-    @State private var naming = false
-    @State private var folderName = ""
+    @State private var moving = false
+    @State private var movedTo: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.navigate) private var navigate
 
     var body: some View {
         Group {
@@ -779,8 +788,7 @@ struct PlaylistView: View {
                                editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } }) {
                     PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p), pinned: p.pinned, folder: p.folder, sort: $sort,
                                       onPin: { change { try await API.shared.setPlaylistPinned(id, !p.pinned) } },
-                                      onMove: { f in change { try await API.shared.setPlaylistFolder(id, f) } },
-                                      onNewFolder: { naming = true },
+                                      onMove: { moving = true },
                                       onEdit: { editing = true }, onCollaborate: { collaborating = true }, onDelete: { confirmDelete = true })
                 }
                 .refreshable { await load() }
@@ -809,16 +817,40 @@ struct PlaylistView: View {
         } message: {
             Text("They will be able to add songs to this playlist.")
         }
-        .alert("New Folder", isPresented: $naming) {
-            TextField("Folder name", text: $folderName)
-            Button("Cancel", role: .cancel) { folderName = "" }
-            Button("Create") {
-                let f = folderName.trimmingCharacters(in: .whitespaces)
-                folderName = ""
-                if !f.isEmpty { change { try await API.shared.setPlaylistFolder(id, f) } }
+        .sheet(isPresented: $moving) {
+            if let p = info {
+                MoveToFolderSheet(name: p.name, current: p.folder) { f in
+                    moving = false
+                    change { try await API.shared.setPlaylistFolder(id, f) }
+                    if let f { withAnimation { movedTo = f } }
+                }
             }
-        } message: {
-            Text("This playlist will move into it.")
+        }
+        .overlay(alignment: .bottom) {
+            if let f = movedTo {
+                Button { movedTo = nil; navigate(.folder(f)) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder").font(.system(size: 16))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Moved to").font(sans: 11).foregroundStyle(Theme.fg.opacity(0.6))
+                            HStack(spacing: 2) {
+                                Text(f).font(sans: 14, 600)
+                                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                            }
+                        }
+                    }
+                    .foregroundStyle(Theme.fg)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glass(Color(hex: 0x1E1E20), Capsule(), opacity: 0.6)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 24)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task {
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    withAnimation { movedTo = nil }
+                }
+            }
         }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) {
             Button("OK", role: .cancel) {}
@@ -961,8 +993,15 @@ struct FolderView: View {
     @EnvironmentObject private var lib: LibraryModel
     @Environment(\.navigate) private var navigate
 
+    @State private var starting = false
+
     var body: some View {
         ScrollView {
+            HStack(spacing: 12) {
+                folderButton("play.fill", "Play", shuffle: false)
+                folderButton("shuffle", "Shuffle", shuffle: true)
+            }
+            .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
             LazyVStack(spacing: 0) {
                 ForEach(lib.playlists.filter { $0.folder == name }) { p in
                     Button { navigate(.playlist(p.id)) } label: {
@@ -989,5 +1028,30 @@ struct FolderView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await lib.loadPlaylists() }
+    }
+
+    private func folderButton(_ icon: String, _ label: String, shuffle: Bool) -> some View {
+        Button {
+            guard !starting else { return }
+            starting = true
+            Task {
+                var all: [Track] = []
+                for p in lib.playlists.filter({ $0.folder == name }) {
+                    if let r = try? await API.shared.playlist(p.id) { all += r.1 }
+                }
+                if shuffle { all.shuffle() }
+                if let f = all.first { Playback.play(f, in: all) }
+                starting = false
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 15, weight: .bold))
+                Text(label).font(sans: 17, 600)
+            }
+            .foregroundStyle(Theme.fg)
+            .frame(maxWidth: .infinity).frame(height: 46)
+            .background(Capsule().fill(Color.white.opacity(0.12)))
+        }
+        .buttonStyle(PressStyle())
     }
 }
