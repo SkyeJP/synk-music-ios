@@ -740,7 +740,7 @@ struct PlaylistView: View {
         .task { if info == nil { await load() } }
         .sheet(isPresented: $editing) {
             if let p = info {
-                EditPlaylistSheet(id: id, name: p.name, description: p.description) { Task { await load() } }
+                EditPlaylistSheet(id: id, name: p.name, description: p.description, isPublic: p.isPublic) { Task { await load() } }
             }
         }
         .alert("Start Collaboration", isPresented: $collaborating) {

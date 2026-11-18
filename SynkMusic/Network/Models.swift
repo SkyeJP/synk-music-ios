@@ -232,13 +232,14 @@ struct Playlist: Decodable, Hashable, Identifiable {
     var coverTracks: [String] = []
     var owner: String? = nil
     var ownerId: String? = nil
+    var isPublic = false
 
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         id = c.str("id"); name = c.str("name"); description = c.str("description"); image = c.str("image")
         trackCount = c.int("trackCount"); coverTracks = c.list("coverTracks", String.self)
-        owner = c.strOrNil("owner"); ownerId = c.strOrNil("ownerId")
+        owner = c.strOrNil("owner"); ownerId = c.strOrNil("ownerId"); isPublic = c.bool("isPublic")
     }
 
     var coverUrl: String {

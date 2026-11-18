@@ -192,10 +192,11 @@ struct EditPlaylistSheet: View {
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
-    init(id: String, name: String, description: String, onSaved: @escaping () -> Void) {
+    init(id: String, name: String, description: String, isPublic: Bool, onSaved: @escaping () -> Void) {
         self.id = id
         _name = State(initialValue: name)
         _description = State(initialValue: description)
+        _isPublic = State(initialValue: isPublic)
         self.onSaved = onSaved
     }
 
