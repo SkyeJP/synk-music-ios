@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: You
 
@@ -373,6 +374,7 @@ struct SettingsView: View {
             SettingsLabel(text: "Downloads")
             nav("Downloaded songs", "Manage music saved for offline listening") { navigate(.downloads) }
             SettingsLabel(text: "App")
+            nav("Diagnostics", "Recent playback and download problems, to copy and send") { navigate(.diagnostics) }
             SettingsCard {
                 Text("Version").font(sans: 15, 500).foregroundStyle(Theme.fg)
                 Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
@@ -750,6 +752,36 @@ struct TuningCurve: View {
                 if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
             }
             ctx.stroke(path, with: .color(Theme.bone), lineWidth: 2.5)
+        }
+    }
+}
+
+struct DiagnosticsView: View {
+    @ObservedObject private var log = DebugLog.shared
+
+    var body: some View {
+        SettingsPage(title: "Diagnostics") {
+            HStack(spacing: 10) {
+                Button { UIPasteboard.general.string = log.lines.joined(separator: "\n") } label: {
+                    Text("Copy").font(sans: 15, 600).foregroundStyle(Color.black).frame(maxWidth: .infinity).frame(height: 44)
+                        .background(Capsule().fill(Theme.fg))
+                }
+                Button { log.clear() } label: {
+                    Text("Clear").font(sans: 15, 600).foregroundStyle(Theme.fg).frame(maxWidth: .infinity).frame(height: 44)
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25)))
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16).padding(.bottom, 12)
+            if log.lines.isEmpty {
+                Text("Nothing logged since the app started.").font(sans: 14).foregroundStyle(Theme.muted).padding(.horizontal, 16)
+            }
+            ForEach(Array(log.lines.reversed().enumerated()), id: \.offset) { _, l in
+                Text(l).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 3)
+                    .textSelection(.enabled)
+            }
         }
     }
 }

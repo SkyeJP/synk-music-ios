@@ -95,8 +95,12 @@ final class DownloadStore: ObservableObject {
         downloading.insert(k)
         let quality = SettingsStore.shared.requestQuality
         Task {
-            let entry = try? await DownloadStore.fetch(t, key: k, quality: quality)
+            var entry: DownloadEntry?
+            do { entry = try await DownloadStore.fetch(t, key: k, quality: quality) } catch {
+                DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)")
+            }
             downloading.remove(k)
+            if entry != nil { DebugLog.shared.add("downloaded \(t.displayTitle)") }
             if let entry {
                 entries[k] = entry
                 save()
@@ -114,11 +118,17 @@ final class DownloadStore: ObservableObject {
     nonisolated private static func fetch(_ t: Track, key: String, quality: String?) async throws -> DownloadEntry? {
         var url = try? await API.shared.streamURL(t, quality: quality)
         if url == nil, quality != nil { url = try await API.shared.streamURL(t, quality: nil) }
-        guard let url else { return nil }
+        guard let url else {
+            DebugLog.log("download \(t.displayTitle): no stream url")
+            return nil
+        }
         var req = URLRequest(url: url)
         req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
         let (tmp, resp) = try await URLSession.shared.download(for: req)
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            DebugLog.log("download \(t.displayTitle): HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)")
+            return nil
+        }
         let ext = AudioFile.ext(contentType: http.value(forHTTPHeaderField: "Content-Type"), url: url)
         let name = "\(key).\(ext)"
         let dest = dir.appendingPathComponent(name)

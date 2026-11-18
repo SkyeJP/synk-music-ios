@@ -236,8 +236,25 @@ extension API {
     }
     func streamURL(_ t: Track, quality: String?) async throws -> URL? {
         let d = try await data(request("stream/token", method: "POST", body: StreamTokenRequest(t, quality: quality)))
-        let url = (try JSONSerialization.jsonObject(with: d) as? [String: Any])?["url"] as? String ?? ""
-        return API.absoluteStreamURL(url)
+        let raw = (try JSONSerialization.jsonObject(with: d) as? [String: Any])?["url"] as? String ?? ""
+        guard let url = API.absoluteStreamURL(raw) else {
+            DebugLog.log("stream/token gave no url for \(t.displayTitle)")
+            return nil
+        }
+        return API.withSession(url)
+    }
+
+    /// Signed stream links expire 60 s after they are issued and every request is
+    /// checked, but AVPlayer keeps requesting ranges for the whole song. The stream
+    /// route also accepts the session as `token=`, which lasts as long as the login.
+    static func withSession(_ url: URL) -> URL {
+        guard let t = AuthStore.shared.token, !t.isEmpty,
+              var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = c.queryItems ?? []
+        if items.contains(where: { $0.name == "token" }) { return url }
+        items.append(URLQueryItem(name: "token", value: t))
+        c.queryItems = items
+        return c.url ?? url
     }
 
     // Analytics

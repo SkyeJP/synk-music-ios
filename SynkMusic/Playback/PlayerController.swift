@@ -35,6 +35,8 @@ final class PlayerClock: ObservableObject {
 
 private final class SynkItem: AVPlayerItem {
     var trackHash = ""
+    var title = ""
+    var statusObservation: NSKeyValueObservation?
 }
 
 @MainActor
@@ -99,7 +101,15 @@ final class PlayerController: ObservableObject {
         })
         observers.append(nc.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: nil, queue: .main) { [weak self] n in
             let item = n.object as? SynkItem
-            Task { @MainActor in self?.itemFailed(item) }
+            let err = (n.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription ?? "unknown error"
+            Task { @MainActor in
+                DebugLog.shared.add("stopped mid-song \(item?.title ?? ""): \(err)")
+                self?.itemFailed(item)
+            }
+        })
+        observers.append(nc.addObserver(forName: .AVPlayerItemPlaybackStalled, object: nil, queue: .main) { n in
+            let title = (n.object as? SynkItem)?.title ?? ""
+            Task { @MainActor in DebugLog.shared.add("stalled \(title)") }
         })
     }
 
@@ -233,9 +243,23 @@ final class PlayerController: ObservableObject {
         let asset = AVURLAsset(url: url)
         let item = SynkItem(asset: asset)
         item.trackHash = t.hash
+        item.title = t.displayTitle
         item.preferredForwardBufferDuration = 30
-        if let a = try? await asset.loadTracks(withMediaType: .audio).first {
-            item.audioMix = EQTap.audioMix(for: a)
+        do {
+            if let a = try await asset.loadTracks(withMediaType: .audio).first {
+                item.audioMix = EQTap.audioMix(for: a)
+            }
+        } catch {
+            DebugLog.log("load \(t.displayTitle) (\(url.isFileURL ? "file" : "stream")): \(error.localizedDescription)")
+        }
+        // A stream that fails to open never reaches "failed to play to end".
+        item.statusObservation = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+            guard it.status == .failed else { return }
+            let msg = it.error?.localizedDescription ?? "unknown error"
+            Task { @MainActor in
+                DebugLog.shared.add("item failed \(t.displayTitle): \(msg)")
+                self?.itemFailed(it as? SynkItem)
+            }
         }
         return item
     }
@@ -245,8 +269,16 @@ final class PlayerController: ObservableObject {
         if let local = DownloadStore.shared.localURL(t) { return local }
         let q = SettingsStore.shared.requestQuality
         if let cached = AudioCache.file(t.hash, quality: q) { return cached }
-        if let u = try? await API.shared.streamURL(t, quality: q) { return u }
-        if q != nil { return try? await API.shared.streamURL(t, quality: nil) }
+        do {
+            if let u = try await API.shared.streamURL(t, quality: q) { return u }
+        } catch {
+            DebugLog.log("stream/token \(t.displayTitle) quality \(q ?? "default"): \(error.localizedDescription)")
+        }
+        if q != nil {
+            do { return try await API.shared.streamURL(t, quality: nil) } catch {
+                DebugLog.log("stream/token \(t.displayTitle) default: \(error.localizedDescription)")
+            }
+        }
         return nil
     }
 
@@ -305,6 +337,7 @@ final class PlayerController: ObservableObject {
     }
 
     private func skipAfterFailure(_ t: Track) {
+        DebugLog.shared.add("skipping \(t.displayTitle) after a second failure")
         if let n = nextIndex(from: index, wrap: false) {
             retried = nil
             load(n)

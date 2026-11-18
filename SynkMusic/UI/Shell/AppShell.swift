@@ -6,7 +6,7 @@ enum LibraryPage: String, Hashable, CaseIterable {
 
 enum Route: Hashable {
     case album(String), playlist(String), artist(String), artistNamed(String), library(LibraryPage)
-    case profile, analytics, settings, equalizer, tuning, downloads
+    case profile, analytics, settings, equalizer, tuning, downloads, diagnostics
 }
 
 /// Home, Explore, Radio, Library and Search, as on the m. site.
@@ -167,6 +167,7 @@ struct AppShell: View {
         case .equalizer: EqualizerView()
         case .tuning: DeviceTuningView()
         case .downloads: DownloadsView()
+        case .diagnostics: DiagnosticsView()
         }
     }
 }
