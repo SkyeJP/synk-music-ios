@@ -19,6 +19,7 @@ struct FullPlayer: View {
     @State private var tint = Color(hex: 0x2A1414)
     @State private var controlsHidden = false
     @State private var touched = Date()
+    @ObservedObject private var systemVolume = SystemVolume.shared
 
     var body: some View {
         let s = Playback.state()
@@ -104,7 +105,15 @@ struct FullPlayer: View {
                             .padding(.top, 14)
                             HStack(spacing: 12) {
                                 Image(systemName: "speaker.fill").font(.system(size: 11)).foregroundStyle(Theme.fg.opacity(0.6))
-                                SeekBar(value: Double(s.volume), total: 1) { Playback.setVolume(Float($0)) }.frame(height: 24)
+                                if Playback.isRemote {
+                                    SeekBar(value: Double(s.volume), total: 1) { Playback.setVolume(Float($0)) }.frame(height: 24)
+                                } else {
+                                    SeekBar(value: Double(systemVolume.level), total: 1) { v in
+                                        systemVolume.set(Float(v))
+                                        if s.volume < 1 { Playback.setVolume(1) }
+                                    }
+                                    .frame(height: 24)
+                                }
                                 Image(systemName: "speaker.wave.3.fill").font(.system(size: 11)).foregroundStyle(Theme.fg.opacity(0.6))
                             }
                             .padding(.top, 22)
@@ -131,6 +140,7 @@ struct FullPlayer: View {
                 .padding(.bottom, 12)
             }
         }
+        .background(SystemVolumeHost().frame(width: 1, height: 1))
         .artTint(s.current?.coverUrl ?? "", value: 0.32, into: $tint)
         .offset(y: max(0, drag))
         .simultaneousGesture(TapGesture().onEnded { wake() })
