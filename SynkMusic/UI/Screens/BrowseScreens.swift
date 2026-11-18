@@ -674,32 +674,19 @@ struct AlbumView: View {
     @Environment(\.navigate) private var navigate
 
     var body: some View {
-        ScrollView {
-            if !loaded { Loading() } else if let a = album {
-                VStack(spacing: 0) {
-                    CollectionTop(cover: a.coverUrl, title: a.displayTitle, artist: a.artist,
-                                  onArtist: artistAction(a),
-                                  meta: [a.genres.first ?? "", a.year].filter { !$0.isEmpty }.joined(separator: ", "),
-                                  tracks: tracks)
-                    TrackList(tracks: tracks, numbered: true)
-                        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5) }
-                    if !tracks.isEmpty {
-                        Text("\(Format.plural(tracks.count, "song", "songs")), \(minutes(tracks)) minutes")
-                            .font(sans: 14).foregroundStyle(Theme.fg.opacity(0.45))
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.top, 16)
-                    }
+        Group {
+            if !loaded {
+                Loading().frame(maxHeight: .infinity).background(Theme.ink)
+            } else if let a = album {
+                CollectionPage(cover: a.coverUrl, title: a.displayTitle, subtitle: a.artist, onSubtitle: artistAction(a),
+                               tracks: tracks, numbered: true,
+                               footer: tracks.isEmpty ? "" : "\(Format.plural(tracks.count, "song", "songs")), \(minutes(tracks)) minutes",
+                               shareURL: URL(string: "https://synkmusic.co.uk/album/\(a.hash)")) {
+                    AlbumMenuItems(album: a, tracks: tracks)
                 }
-                .padding(.bottom, 24)
             } else {
-                Text("Album not found.").font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55)).frame(maxWidth: .infinity).padding(.vertical, 96)
-            }
-        }
-        .background(Theme.ink)
-        .navigationTitle(album?.displayTitle ?? "")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let a = album { MoreMenu { AlbumMenuItems(album: a, tracks: tracks) } }
+                Text("Album not found.").font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.ink)
             }
         }
         .task {
@@ -728,35 +715,22 @@ struct PlaylistView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
+        Group {
             if !error.isEmpty {
-                Text(error).font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55)).frame(maxWidth: .infinity).padding(.vertical, 96)
+                Text(error).font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.ink)
             } else if let p = info {
-                VStack(alignment: .leading, spacing: 0) {
-                    CollectionTop(cover: p.coverUrl, title: p.name, artist: p.owner ?? "", meta: meta, tracks: tracks)
-                    if !p.description.isEmpty {
-                        Text(p.description).font(sans: 14).foregroundStyle(Theme.fg.opacity(0.6)).padding(.horizontal, 16).padding(.bottom, 12)
-                    }
-                    TrackList(tracks: tracks, fromPlaylist: id, onRemoved: { Task { await load() } })
-                        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 0.5) }
+                CollectionPage(cover: p.coverUrl, title: p.name, subtitle: p.owner ?? "", description: p.description,
+                               tracks: tracks, fromPlaylist: id, onRemoved: { Task { await load() } },
+                               footer: meta, shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)")) {
+                    PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p)) { confirmDelete = true }
                 }
-                .padding(.bottom, 24)
+                .refreshable { await load() }
             } else {
-                Loading()
-            }
-        }
-        .background(Theme.ink)
-        .navigationTitle(info?.name ?? "")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let p = info {
-                    MoreMenu { PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p)) { confirmDelete = true } }
-                }
+                Loading().frame(maxHeight: .infinity).background(Theme.ink)
             }
         }
         .task { if info == nil { await load() } }
-        .refreshable { await load() }
         .confirmationDialog("Delete this playlist?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Playlist", role: .destructive) {
                 Task {
@@ -771,7 +745,7 @@ struct PlaylistView: View {
 
     private var meta: String {
         let m = minutes(tracks)
-        return "\(tracks.count) songs, " + (m >= 60 ? "\(m / 60) hr \(m % 60) min" : "\(m) min")
+        return "\(Format.plural(tracks.count, "song", "songs")), " + (m >= 60 ? "\(m / 60) hr \(m % 60) min" : "\(m) minutes")
     }
 
     private func isOwner(_ p: Playlist) -> Bool {

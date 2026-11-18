@@ -320,6 +320,18 @@ struct LikeButton: View {
     }
 }
 
+/// The small star in a song row's left margin when it is a favourite.
+struct FavouriteStar: View {
+    let track: Track
+    @ObservedObject private var likes = LikesStore.shared
+    var body: some View {
+        if likes.isLiked(track) {
+            Image(systemName: "star.fill").font(.system(size: 7)).foregroundStyle(Theme.fg.opacity(0.6))
+                .accessibilityLabel("Favourite")
+        }
+    }
+}
+
 struct PlayOverlay: View {
     let playing: Bool
     let size: CGFloat
@@ -378,6 +390,7 @@ struct TrackRow: View {
             }
             Spacer(minLength: 8)
             if showLike && !numbered { LikeButton(track: track) }
+            DownloadMark(track: track)
             MoreMenu(tint: Theme.fg.opacity(0.7)) {
                 TrackMenuItems(track: track, fromPlaylist: fromPlaylist, onRemoved: onRemoved)
             }
@@ -386,6 +399,7 @@ struct TrackRow: View {
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
         .onTapGesture { if current { Playback.toggle() } else { action() } }
+        .overlay(alignment: .leading) { FavouriteStar(track: track).offset(x: -2) }
         .contextMenu { TrackMenuItems(track: track, fromPlaylist: fromPlaylist, onRemoved: onRemoved) }
         .hairline(numbered ? 40 : 70)
     }

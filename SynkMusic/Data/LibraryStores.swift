@@ -51,6 +51,9 @@ final class DownloadStore: ObservableObject {
     static let shared = DownloadStore()
     @Published private(set) var entries: [String: DownloadEntry] = [:]
     @Published private(set) var downloading: Set<String> = []
+    /// 0 to 1 for songs being fetched right now; queued songs are in `downloading` only.
+    @Published private(set) var progress: [String: Double] = [:]
+    private var running: [String: Task<Void, Never>] = [:]
 
     nonisolated static let dir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -104,23 +107,57 @@ final class DownloadStore: ObservableObject {
     private func pump() {
         while active < 2, !pending.isEmpty {
             let t = pending.removeFirst()
+            let k = key(t)
             active += 1
-            Task {
+            progress[k] = 0
+            running[k] = Task {
                 await run(t)
+                running[k] = nil
+                progress[k] = nil
                 active -= 1
                 pump()
             }
         }
     }
 
+    /// Stops queued and running downloads of these songs.
+    func cancel(_ tracks: [Track]) {
+        let keys = Set(tracks.map { key($0) })
+        pending.removeAll { keys.contains(key($0)) }
+        for k in keys {
+            running[k]?.cancel()
+            downloading.remove(k)
+            progress[k] = nil
+        }
+    }
+
+    /// How far a set of songs is: 0 to 1 counting downloaded songs and partial ones.
+    func fraction(_ tracks: [Track]) -> Double {
+        guard !tracks.isEmpty else { return 0 }
+        let done = tracks.reduce(0.0) { sum, t in
+            let k = key(t)
+            if entries[k] != nil { return sum + 1 }
+            return sum + (progress[k] ?? 0)
+        }
+        return done / Double(tracks.count)
+    }
+
+    private func setProgress(_ k: String, _ v: Double) {
+        if downloading.contains(k) { progress[k] = v }
+    }
+
     private func run(_ t: Track) async {
         let k = key(t)
         let quality = SettingsStore.shared.requestQuality
         var entry: DownloadEntry?
-        for attempt in 0..<2 where entry == nil {
+        for attempt in 0..<2 where entry == nil && !Task.isCancelled {
             if attempt > 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
-            do { entry = try await DownloadStore.fetch(t, key: k, quality: quality, report: attempt > 0) } catch {
-                if attempt > 0 { DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)") }
+            do {
+                entry = try await DownloadStore.fetch(t, key: k, quality: quality, report: attempt > 0) { [weak self] v in
+                    Task { @MainActor in self?.setProgress(k, v) }
+                }
+            } catch {
+                if attempt > 0 && !Task.isCancelled { DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)") }
             }
         }
         downloading.remove(k)
@@ -138,7 +175,8 @@ final class DownloadStore: ObservableObject {
         save()
     }
 
-    nonisolated private static func fetch(_ t: Track, key: String, quality: String?, report: Bool) async throws -> DownloadEntry? {
+    nonisolated private static func fetch(_ t: Track, key: String, quality: String?, report: Bool,
+                                          onProgress: @escaping @Sendable (Double) -> Void) async throws -> DownloadEntry? {
         var url = try? await API.shared.streamURL(t, quality: quality)
         if url == nil, quality != nil { url = try await API.shared.streamURL(t, quality: nil) }
         guard let url else {
@@ -147,7 +185,7 @@ final class DownloadStore: ObservableObject {
         }
         var req = URLRequest(url: url)
         req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
-        let (tmp, resp) = try await URLSession.shared.download(for: req)
+        let (tmp, resp) = try await URLSession.shared.download(for: req, delegate: ProgressDelegate(onProgress))
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let text = (try? String(contentsOf: tmp, encoding: .utf8)).map { " " + String($0.prefix(200)) } ?? ""
             try? FileManager.default.removeItem(at: tmp)
@@ -174,6 +212,19 @@ final class DownloadStore: ObservableObject {
 
     private func save() {
         if let d = try? JSONEncoder().encode(Array(entries.values)) { try? d.write(to: manifest, options: .atomic) }
+    }
+}
+
+/// Reports a download task's progress as it goes.
+private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
+    private let onProgress: @Sendable (Double) -> Void
+    private var observation: NSKeyValueObservation?
+
+    init(_ onProgress: @escaping @Sendable (Double) -> Void) { self.onProgress = onProgress }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        let report = onProgress
+        observation = task.progress.observe(\.fractionCompleted, options: [.new]) { p, _ in report(p.fractionCompleted) }
     }
 }
 
