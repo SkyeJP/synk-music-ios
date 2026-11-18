@@ -89,22 +89,45 @@ final class DownloadStore: ObservableObject {
 
     func toggle(_ t: Track) { isDownloaded(t) ? remove(t) : download(t) }
 
+    private var pending: [Track] = []
+    private var active = 0
+
+    /// Downloads queue and run two at a time; a whole playlist at once overwhelms the server.
     func download(_ t: Track) {
         let k = key(t)
         if isDownloaded(t) || downloading.contains(k) { return }
         downloading.insert(k)
+        pending.append(t)
+        pump()
+    }
+
+    private func pump() {
+        while active < 2, !pending.isEmpty {
+            let t = pending.removeFirst()
+            active += 1
+            Task {
+                await run(t)
+                active -= 1
+                pump()
+            }
+        }
+    }
+
+    private func run(_ t: Track) async {
+        let k = key(t)
         let quality = SettingsStore.shared.requestQuality
-        Task {
-            var entry: DownloadEntry?
-            do { entry = try await DownloadStore.fetch(t, key: k, quality: quality) } catch {
-                DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)")
+        var entry: DownloadEntry?
+        for attempt in 0..<2 where entry == nil {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            do { entry = try await DownloadStore.fetch(t, key: k, quality: quality, report: attempt > 0) } catch {
+                if attempt > 0 { DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)") }
             }
-            downloading.remove(k)
-            if entry != nil { DebugLog.shared.add("downloaded \(t.displayTitle)", issue: false) }
-            if let entry {
-                entries[k] = entry
-                save()
-            }
+        }
+        downloading.remove(k)
+        if let entry {
+            DebugLog.shared.add("downloaded \(t.displayTitle)", issue: false)
+            entries[k] = entry
+            save()
         }
     }
 
@@ -115,18 +138,20 @@ final class DownloadStore: ObservableObject {
         save()
     }
 
-    nonisolated private static func fetch(_ t: Track, key: String, quality: String?) async throws -> DownloadEntry? {
+    nonisolated private static func fetch(_ t: Track, key: String, quality: String?, report: Bool) async throws -> DownloadEntry? {
         var url = try? await API.shared.streamURL(t, quality: quality)
         if url == nil, quality != nil { url = try await API.shared.streamURL(t, quality: nil) }
         guard let url else {
-            DebugLog.log("download \(t.displayTitle): no stream url")
+            if report { DebugLog.log("download \(t.displayTitle): no stream url") }
             return nil
         }
         var req = URLRequest(url: url)
         req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
         let (tmp, resp) = try await URLSession.shared.download(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            DebugLog.log("download \(t.displayTitle): HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)")
+            let text = (try? String(contentsOf: tmp, encoding: .utf8)).map { " " + String($0.prefix(200)) } ?? ""
+            try? FileManager.default.removeItem(at: tmp)
+            if report { DebugLog.log("download \(t.displayTitle) (\(quality ?? "default")): HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)\(text)") }
             return nil
         }
         let ext = AudioFile.ext(contentType: http.value(forHTTPHeaderField: "Content-Type"), url: url)
