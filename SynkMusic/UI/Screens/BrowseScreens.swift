@@ -170,6 +170,7 @@ final class HomeModel: ObservableObject {
                     return
                 }
             } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled || error is CancellationError { return }
                 DebugLog.shared.add("home: \(error.localizedDescription)")
             }
             if attempt == 0 { try? await Task.sleep(nanoseconds: 2_000_000_000) }

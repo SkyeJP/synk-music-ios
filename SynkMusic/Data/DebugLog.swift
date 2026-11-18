@@ -21,10 +21,16 @@ final class DebugLog: ObservableObject {
         let line = "\(fmt.string(from: Date())) \(s)"
         lines.append(line)
         if lines.count > 200 { lines.removeFirst(lines.count - 200) }
-        if issue { queue(s, line) }
+        if issue && !DebugLog.isCancellation(s) { queue(s, line) }
     }
 
     func clear() { lines = [] }
+
+    /// Requests the app itself stopped (leaving a page, skipping a song) are not problems.
+    static func isCancellation(_ s: String) -> Bool {
+        let l = s.lowercased()
+        return l.hasSuffix(": cancelled") || l.hasSuffix(": canceled") || l.contains("cancellationerror")
+    }
 
     nonisolated static func log(_ s: String, issue: Bool = true) {
         Task { @MainActor in DebugLog.shared.add(s, issue: issue) }
