@@ -680,7 +680,7 @@ struct AlbumView: View {
             } else if let a = album {
                 CollectionPage(cover: a.coverUrl, title: a.displayTitle, subtitle: a.artist, onSubtitle: artistAction(a),
                                tracks: tracks, numbered: true,
-                               footer: tracks.isEmpty ? "" : "\(Format.plural(tracks.count, "song", "songs")), \(minutes(tracks)) minutes",
+                               footer: tracks.isEmpty ? "" : Durations.summary(tracks),
                                shareURL: URL(string: "https://synkmusic.co.uk/album/\(a.hash)")) {
                     AlbumMenuItems(album: a, tracks: tracks)
                 }
@@ -722,7 +722,8 @@ struct PlaylistView: View {
             } else if let p = info {
                 CollectionPage(cover: p.coverUrl, title: p.name, subtitle: p.owner ?? "", description: p.description,
                                tracks: tracks, fromPlaylist: id, onRemoved: { Task { await load() } },
-                               footer: meta, shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)")) {
+                               footer: Durations.summary(tracks), shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)"),
+                               editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } }) {
                     PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p)) { confirmDelete = true }
                 }
                 .refreshable { await load() }
@@ -743,10 +744,6 @@ struct PlaylistView: View {
         }
     }
 
-    private var meta: String {
-        let m = minutes(tracks)
-        return "\(Format.plural(tracks.count, "song", "songs")), " + (m >= 60 ? "\(m / 60) hr \(m % 60) min" : "\(m) minutes")
-    }
 
     private func isOwner(_ p: Playlist) -> Bool {
         let me = AuthStore.shared.user

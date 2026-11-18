@@ -16,6 +16,9 @@ struct CollectionPage<MenuItems: View>: View {
     var onRemoved: (() -> Void)?
     var footer = ""
     var shareURL: URL?
+    /// Your own playlist's id: shows Add Music and Suggested Songs.
+    var editable: String?
+    var onAdded: (() -> Void)?
     @ViewBuilder var menu: () -> MenuItems
 
     @EnvironmentObject private var player: PlayerController
@@ -99,9 +102,15 @@ struct CollectionPage<MenuItems: View>: View {
                     }
                 }
                 .padding(.leading, 10)
+                if let pid = editable, filter.isEmpty {
+                    AddMusicRow(playlistId: pid) { onAdded?() }
+                }
                 if !footer.isEmpty && filter.isEmpty {
-                    Text(footer).font(sans: 14).foregroundStyle(Theme.fg.opacity(0.5))
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 16)
+                    Text(footer).font(sans: 16).foregroundStyle(Theme.fg.opacity(0.55))
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 20)
+                }
+                if let pid = editable, filter.isEmpty, !tracks.isEmpty {
+                    SuggestedSongs(playlistId: pid, tracks: tracks) { onAdded?() }
                 }
             }
             .padding(.bottom, 32)
