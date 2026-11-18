@@ -409,6 +409,7 @@ final class PlayerController: ObservableObject {
     }
 
     private func trackChanged() {
+        extendForAutoplay()
         tracker.onTrackChanged(current)
         if isPlaying { tracker.onPlayingChanged(true) }
     }
@@ -608,6 +609,21 @@ final class PlayerController: ObservableObject {
         queue = Array(queue[0...index])
         order = order.filter { $0 <= index }
         queueChanged()
+    }
+
+    /// Autoplay (the infinity button): on the last song, add similar songs so
+    /// the music keeps going once the queue runs out.
+    private var extending = false
+    private func extendForAutoplay() {
+        guard SettingsStore.shared.autoplay, repeatMode == .off, !extending,
+              nextIndex(from: index, wrap: false) == nil, let seed = current, !seed.artist.isEmpty else { return }
+        extending = true
+        Task { @MainActor in
+            defer { extending = false }
+            let have = Set(queue.map(\.hash))
+            let more = ((try? await API.shared.artistRadio(seed.artist)) ?? []).filter { !have.contains($0.hash) }
+            more.prefix(25).forEach { addToQueue($0) }
+        }
     }
 
     private func queueChanged() {

@@ -60,18 +60,24 @@ struct TrackMenuItems: View {
                 Button { startStation(track.artist) } label: { Label("Create Station", systemImage: "dot.radiowaves.left.and.right") }
             }
         }
-        Section {
-            if !track.albumhash.isEmpty {
-                Button { Sheets.shared.navigate(.album(track.albumhash)) } label: {
-                    Label { Text("Go to Album"); Text(track.album) } icon: { Image(systemName: "square.stack") }
-                }
-            }
-            if !track.artist.isEmpty {
-                Button {
-                    let h = track.artists.first?.artisthash ?? ""
-                    Sheets.shared.navigate(h.isEmpty ? .artistNamed(track.artist) : .artist(h))
+        if !track.albumhash.isEmpty || !track.artist.isEmpty {
+            Section {
+                Menu {
+                    if !track.albumhash.isEmpty {
+                        Button { Sheets.shared.navigate(.album(track.albumhash)) } label: {
+                            Label { Text("Album"); Text(track.album) } icon: { Image(systemName: "square.stack") }
+                        }
+                    }
+                    if !track.artist.isEmpty {
+                        Button {
+                            let h = track.artists.first?.artisthash ?? ""
+                            Sheets.shared.navigate(h.isEmpty ? .artistNamed(track.artist) : .artist(h))
+                        } label: {
+                            Label { Text("Artist"); Text(track.artist) } icon: { Image(systemName: "music.mic") }
+                        }
+                    }
                 } label: {
-                    Label { Text("Go to Artist"); Text(track.artist) } icon: { Image(systemName: "music.mic") }
+                    Label("Go to", systemImage: "arrow.up.right")
                 }
             }
         }
