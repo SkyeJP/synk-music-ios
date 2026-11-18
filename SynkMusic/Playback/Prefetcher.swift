@@ -87,9 +87,16 @@ final class Prefetcher {
               !Task.isCancelled else { return }
         var req = URLRequest(url: url)
         req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
-        guard let res = try? await URLSession.shared.download(for: req),
-              let http = res.1 as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            if !Task.isCancelled { DebugLog.log("cache \(t.displayTitle): download failed") }
+        let res: (URL, URLResponse)
+        do { res = try await URLSession.shared.download(for: req) } catch {
+            if !Task.isCancelled { DebugLog.log("cache \(t.displayTitle): \(error.localizedDescription)") }
+            return
+        }
+        guard let http = res.1 as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (res.1 as? HTTPURLResponse)?.statusCode ?? 0
+            let text = (try? String(contentsOf: res.0, encoding: .utf8)).map { " " + String($0.prefix(200)) } ?? ""
+            try? FileManager.default.removeItem(at: res.0)
+            if !Task.isCancelled { DebugLog.log("cache \(t.displayTitle): HTTP \(code)\(text)") }
             return
         }
         let tmp = res.0

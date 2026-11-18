@@ -362,6 +362,15 @@ final class PlayerController: ObservableObject {
 
     private func itemFailed(_ item: SynkItem?) {
         guard let item, let t = current, item.trackHash == t.hash else { return }
+        if let url = (item.asset as? AVURLAsset)?.url, !url.isFileURL {
+            Task.detached { await PlayerController.probe(url, t.displayTitle) }
+            if url.query?.contains("quality=alac") == true, !mp3Only.contains(t.hash) {
+                mp3Only.insert(t.hash)
+                DebugLog.shared.add("\(t.displayTitle): ALAC failed, trying MP3")
+                load(index, positionMs: positionMs, autoplay: true)
+                return
+            }
+        }
         if retried != t.hash {
             retried = t.hash
             AudioCache.remove(t.hash)
@@ -369,6 +378,23 @@ final class PlayerController: ObservableObject {
         } else {
             skipAfterFailure(t)
         }
+    }
+
+    /// Asks the server again for the first bytes and logs its answer, so a failed
+    /// stream shows the status and error message, not just "resource unavailable".
+    nonisolated static func probe(_ url: URL, _ title: String) async {
+        var req = URLRequest(url: url)
+        req.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+        req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 20
+        guard let (d, resp) = try? await URLSession.shared.data(for: req), let http = resp as? HTTPURLResponse else {
+            DebugLog.log("probe \(title): no answer")
+            return
+        }
+        let type = http.value(forHTTPHeaderField: "Content-Type") ?? "?"
+        let quality = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "quality" }?.value ?? "default"
+        let body = type.contains("json") ? " " + String(decoding: d.prefix(200), as: UTF8.self) : ""
+        DebugLog.log("probe \(title) (\(quality)): HTTP \(http.statusCode) \(type)\(body)")
     }
 
     private func skipAfterFailure(_ t: Track) {
