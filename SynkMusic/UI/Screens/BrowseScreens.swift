@@ -711,7 +711,6 @@ struct LibraryPageView: View {
 
 // MARK: Album, playlist, artist
 
-private func minutes(_ tracks: [Track]) -> Int { tracks.reduce(0) { $0 + $1.durationSeconds } / 60 }
 
 struct AlbumView: View {
     let id: String

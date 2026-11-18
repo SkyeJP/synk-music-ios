@@ -216,7 +216,7 @@ final class DownloadStore: ObservableObject {
 }
 
 /// Reports a download task's progress as it goes.
-private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
+private final class ProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let onProgress: @Sendable (Double) -> Void
     private var observation: NSKeyValueObservation?
 
