@@ -233,6 +233,8 @@ struct Playlist: Decodable, Hashable, Identifiable {
     var owner: String? = nil
     var ownerId: String? = nil
     var isPublic = false
+    var folder: String? = nil
+    var pinned = false
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -240,6 +242,7 @@ struct Playlist: Decodable, Hashable, Identifiable {
         id = c.str("id"); name = c.str("name"); description = c.str("description"); image = c.str("image")
         trackCount = c.int("trackCount"); coverTracks = c.list("coverTracks", String.self)
         owner = c.strOrNil("owner"); ownerId = c.strOrNil("ownerId"); isPublic = c.bool("isPublic")
+        folder = c.strOrNil("folder").flatMap { $0.isEmpty ? nil : $0 }; pinned = c.bool("pinned")
     }
 
     var coverUrl: String {

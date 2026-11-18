@@ -220,6 +220,12 @@ extension API {
     func updatePlaylist(_ id: String, name: String, description: String, isPublic: Bool) async throws {
         try await sendVoid("playlists/\(id)", method: "PUT", body: ["name": name, "description": description, "isPublic": isPublic] as [String: Any])
     }
+    func setPlaylistPinned(_ id: String, _ pinned: Bool) async throws {
+        try await sendVoid("playlists/\(id)", method: "PUT", body: ["pinned": pinned])
+    }
+    func setPlaylistFolder(_ id: String, _ folder: String?) async throws {
+        try await sendVoid("playlists/\(id)", method: "PUT", body: ["folder": folder ?? NSNull()] as [String: Any])
+    }
     func addCollaborator(_ id: String, username: String) async throws {
         try await sendVoid("playlists/\(id)/collaborators", body: ["username": username])
     }

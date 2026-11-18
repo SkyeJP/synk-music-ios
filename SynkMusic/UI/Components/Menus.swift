@@ -147,7 +147,12 @@ struct PlaylistMenuItems: View {
     let id: String
     let tracks: [Track]
     let isOwner: Bool
+    var pinned = false
+    var folder: String?
     @Binding var sort: PlaylistSort
+    let onPin: () -> Void
+    let onMove: (String?) -> Void
+    let onNewFolder: () -> Void
     let onEdit: () -> Void
     let onCollaborate: () -> Void
     let onDelete: () -> Void
@@ -162,7 +167,12 @@ struct PlaylistMenuItems: View {
             }
             ShareLink(item: shareURL("/playlist/\(id)")) { Label("Share", systemImage: "square.and.arrow.up") }
         }
-        Section { AddToPlaylistMenu(tracks: tracks) }
+        Section {
+            if isOwner {
+                Button(action: onPin) { Label(pinned ? "Unpin Playlist" : "Pin Playlist", systemImage: pinned ? "pin.slash" : "pin") }
+            }
+            AddToPlaylistMenu(tracks: tracks)
+        }
         Section {
             if isOwner {
                 Button(action: onEdit) { Label("Edit", systemImage: "pencil") }
@@ -174,6 +184,22 @@ struct PlaylistMenuItems: View {
                 }
             } label: {
                 Label("Sort By", systemImage: "arrow.up.arrow.down")
+            }
+            if isOwner {
+                Menu {
+                    Button(action: onNewFolder) { Label("New Folder", systemImage: "folder.badge.plus") }
+                    let names = LibraryModel.shared.folders.filter { $0 != folder }
+                    if !names.isEmpty {
+                        Divider()
+                        ForEach(names, id: \.self) { f in Button { onMove(f) } label: { Label(f, systemImage: "folder") } }
+                    }
+                    if folder != nil {
+                        Divider()
+                        Button { onMove(nil) } label: { Label("Remove from Folder", systemImage: "folder.badge.minus") }
+                    }
+                } label: {
+                    Label("Move to Folder", systemImage: "folder")
+                }
             }
         }
         Section {

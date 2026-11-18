@@ -495,6 +495,12 @@ final class LibraryModel: ObservableObject {
         if let p = try? await API.shared.playlists() { playlists = p }
     }
 
+    var folders: [String] {
+        Array(Set(playlists.compactMap { $0.folder })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    var pinned: [Playlist] { playlists.filter { $0.pinned } }
+
     func load() async {
         loading = true
         async let pls = try? API.shared.playlists()
@@ -546,6 +552,26 @@ struct LibraryView: View {
             Button { navigate(.library(.playlists)) } label: { SynkIcon(SynkIcons.pencil, size: 20) }
                 .accessibilityLabel("Edit playlists")
         } content: {
+            if !lib.pinned.isEmpty {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top), GridItem(.flexible(), spacing: 12, alignment: .top), GridItem(.flexible(), spacing: 12, alignment: .top)], spacing: 14) {
+                    ForEach(lib.pinned) { p in
+                        Button { navigate(.playlist(p.id)) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Artwork(url: p.coverUrl, radius: 8).aspectRatio(1, contentMode: .fit)
+                                Text(p.name).font(sans: 13, 500).foregroundStyle(Theme.fg).lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(PressStyle())
+                        .contextMenu {
+                            Button { Task { try? await API.shared.setPlaylistPinned(p.id, false); await lib.loadPlaylists() } } label: {
+                                Label("Unpin Playlist", systemImage: "pin.slash")
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
             VStack(spacing: 0) {
                 CategoryRow(icon: SynkIcons.queue, label: "Playlists") { navigate(.library(.playlists)) }
                 CategoryRow(icon: SynkIcons.microphone, label: "Artists") { navigate(.library(.artists)) }
@@ -609,7 +635,28 @@ struct LibraryPageView: View {
                         TrackList(tracks: tracks)
                     }
                 case .playlists:
-                    ForEach(lib.playlists) { p in
+                    ForEach(lib.folders, id: \.self) { f in
+                        let n = lib.playlists.filter { $0.folder == f }.count
+                        Button { navigate(.folder(f)) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "folder").font(.system(size: 24)).foregroundStyle(Theme.fg)
+                                    .frame(width: 56, height: 56)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(f).font(sans: 17).foregroundStyle(Theme.fg).lineLimit(1)
+                                    Text(Format.plural(n, "playlist", "playlists")).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55))
+                                }
+                                Spacer()
+                                SynkIcon(SynkIcons.chevronRight, size: 18, tint: Theme.fg.opacity(0.35))
+                            }
+                            .padding(.vertical, 8).padding(.trailing, 16)
+                            .contentShape(Rectangle())
+                            .hairline(68)
+                            .padding(.leading, 16)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    ForEach(lib.playlists.filter { $0.folder == nil }) { p in
                         row(cover: p.coverUrl, round: false, title: p.name, sub: Format.plural(p.trackCount, "song", "songs"), size: 56) {
                             navigate(.playlist(p.id))
                         }
@@ -717,6 +764,8 @@ struct PlaylistView: View {
     @State private var collaborating = false
     @State private var collaborator = ""
     @State private var note: String?
+    @State private var naming = false
+    @State private var folderName = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -729,7 +778,10 @@ struct PlaylistView: View {
                                tracks: sort.apply(tracks), fromPlaylist: id, onRemoved: { Task { await load() } },
                                footer: Durations.summary(tracks), shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)"),
                                editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } }) {
-                    PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p), sort: $sort,
+                    PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p), pinned: p.pinned, folder: p.folder, sort: $sort,
+                                      onPin: { change { try await API.shared.setPlaylistPinned(id, !p.pinned) } },
+                                      onMove: { f in change { try await API.shared.setPlaylistFolder(id, f) } },
+                                      onNewFolder: { naming = true },
                                       onEdit: { editing = true }, onCollaborate: { collaborating = true }, onDelete: { confirmDelete = true })
                 }
                 .refreshable { await load() }
@@ -758,6 +810,17 @@ struct PlaylistView: View {
         } message: {
             Text("They will be able to add songs to this playlist.")
         }
+        .alert("New Folder", isPresented: $naming) {
+            TextField("Folder name", text: $folderName)
+            Button("Cancel", role: .cancel) { folderName = "" }
+            Button("Create") {
+                let f = folderName.trimmingCharacters(in: .whitespaces)
+                folderName = ""
+                if !f.isEmpty { change { try await API.shared.setPlaylistFolder(id, f) } }
+            }
+        } message: {
+            Text("This playlist will move into it.")
+        }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) {
             Button("OK", role: .cancel) {}
         }
@@ -773,6 +836,14 @@ struct PlaylistView: View {
         }
     }
 
+
+    private func change(_ op: @escaping () async throws -> Void) {
+        Task {
+            do { try await op() } catch { note = (error as? APIError)?.message ?? "Couldn't update the playlist." }
+            await load()
+            await LibraryModel.shared.loadPlaylists()
+        }
+    }
 
     private func isOwner(_ p: Playlist) -> Bool {
         let me = AuthStore.shared.user
@@ -882,5 +953,42 @@ struct ArtistLookupView: View {
             let match = r.artists.first { $0.name.lowercased() == name.lowercased() } ?? r.artists.first
             if let match, !match.hash.isEmpty { hash = match.hash } else { failed = true }
         }
+    }
+}
+
+/// The playlists in one folder.
+struct FolderView: View {
+    let name: String
+    @EnvironmentObject private var lib: LibraryModel
+    @Environment(\.navigate) private var navigate
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(lib.playlists.filter { $0.folder == name }) { p in
+                    Button { navigate(.playlist(p.id)) } label: {
+                        HStack(spacing: 12) {
+                            Artwork(url: p.coverUrl, radius: 8).frame(width: 56, height: 56)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(p.name).font(sans: 17).foregroundStyle(Theme.fg).lineLimit(1)
+                                Text(Format.plural(p.trackCount, "song", "songs")).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55))
+                            }
+                            Spacer()
+                            SynkIcon(SynkIcons.chevronRight, size: 18, tint: Theme.fg.opacity(0.35))
+                        }
+                        .padding(.vertical, 8).padding(.trailing, 16)
+                        .contentShape(Rectangle())
+                        .hairline(68)
+                        .padding(.leading, 16)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 24)
+        }
+        .background(Theme.ink)
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.large)
+        .refreshable { await lib.loadPlaylists() }
     }
 }
