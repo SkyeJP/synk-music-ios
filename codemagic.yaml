@@ -4,8 +4,10 @@
 # Environment group "mirror" (Codemagic UI, App settings > Environment variables):
 #   SSH_PRIVATE_KEY  private key allowed to log in to the mirror (secure)
 #   MIRROR_USER      SSH user on the mirror
+#   MIRROR_HOST      the mirror server's IP (mirrors.gafftech.co.uk is behind Cloudflare, which does not pass SSH)
 #   MIRROR_PATH      folder the mirror serves as MIRROR_URL, e.g. /opt/repositories/hostedbysynk/ios
-# Optional overrides: MIRROR_HOST, MIRROR_URL.
+# Optional: MIRROR_URL (defaults to https://mirrors.gafftech.co.uk/ios).
+# Workflow vars below would override these group values, so none of them are set here.
 
 workflows:
   ios-unsigned:
@@ -20,9 +22,6 @@ workflows:
         SCHEME: SynkMusic
         APP_NAME: SYNK
         IPA_NAME: synkmusic.ipa
-        # SSH goes straight to the server: the mirrors hostname is behind Cloudflare, which does not pass SSH.
-        MIRROR_HOST: 37.221.198.246
-        MIRROR_URL: https://mirrors.gafftech.co.uk/ios
         HOMEBREW_NO_AUTO_UPDATE: 1
     cache:
       cache_paths:
@@ -78,6 +77,8 @@ workflows:
           script: |
             #!/bin/bash
             set -euo pipefail
+            : "${MIRROR_HOST:?Set MIRROR_HOST in the mirror environment group}"
+            MIRROR_URL="${MIRROR_URL:-https://mirrors.gafftech.co.uk/ios}"
             # Publishing scripts run even when the build failed; only publish a finished IPA.
             if [ ! -f "$CM_BUILD_DIR/$IPA_NAME" ]; then
               echo "No IPA was built, nothing to publish"
