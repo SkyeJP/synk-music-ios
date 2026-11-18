@@ -276,10 +276,12 @@ final class PlayerController: ObservableObject {
             return cached
         }
         // AVPlayer plays FLAC from a file but cannot open it over HTTP ("resource
-        // unavailable"), and lossless or default can be FLAC. Stream MP3 for now;
-        // the prefetcher caches the requested quality, which plays next time.
-        let streamQ = (q == nil || q == "flac") ? "320" : q!
-        for quality in [streamQ, "128"] {
+        // unavailable"). For lossless or default the server converts FLAC to ALAC,
+        // which streams; if it cannot, it sends a 320 MP3 instead.
+        let streamQ = (q == nil || q == "flac") ? "alac" : q!
+        var tries = [streamQ]
+        for fallback in ["320", "128"] where !tries.contains(fallback) { tries.append(fallback) }
+        for quality in tries {
             do {
                 if let u = try await API.shared.streamURL(t, quality: quality) {
                     DebugLog.log("play \(t.displayTitle) streaming \(quality)")
