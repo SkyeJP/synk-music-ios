@@ -756,7 +756,8 @@ struct AlbumView: View {
                 CollectionPage(cover: a.coverUrl, title: a.displayTitle, subtitle: a.artist, onSubtitle: artistAction(a),
                                tracks: tracks, numbered: true,
                                footer: tracks.isEmpty ? "" : Durations.summary(tracks),
-                               shareURL: URL(string: "https://synkmusic.co.uk/album/\(a.hash)")) {
+                               shareURL: URL(string: "https://synkmusic.co.uk/album/\(a.hash)"),
+                               source: PlaySource(name: a.displayTitle, route: .album(a.hash))) {
                     AlbumMenuItems(album: a, tracks: tracks)
                 }
             } else {
@@ -806,7 +807,8 @@ struct PlaylistView: View {
                 CollectionPage(cover: p.coverUrl, title: p.name, subtitle: p.owner ?? "", description: p.description,
                                tracks: sort.apply(tracks), fromPlaylist: id, onRemoved: { Task { await load() } },
                                footer: Durations.summary(tracks), shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)"),
-                               editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } }) {
+                               editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } },
+                               source: PlaySource(name: p.name, route: .playlist(id), playlistId: id, owned: isOwner(p))) {
                     PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p), pinned: p.pinned, folder: p.folder, sort: $sort,
                                       onPin: { change { try await API.shared.setPlaylistPinned(id, !p.pinned) } },
                                       onMove: { moving = true },

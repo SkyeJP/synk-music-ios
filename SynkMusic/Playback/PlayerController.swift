@@ -39,6 +39,13 @@ private final class SynkItem: AVPlayerItem {
     var statusObservation: NSKeyValueObservation?
 }
 
+struct PlaySource: Equatable {
+    let name: String
+    let route: Route
+    var playlistId: String?
+    var owned = false
+}
+
 @MainActor
 final class PlayerController: ObservableObject {
     static let shared = PlayerController()
@@ -51,6 +58,8 @@ final class PlayerController: ObservableObject {
     @Published private(set) var repeatMode: RepeatMode = .off
     @Published private(set) var volume: Float = 1
     @Published private(set) var quality = ""
+    /// Where the queue came from, for "From ..." and Go to Playlist.
+    @Published var source: PlaySource?
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
 

@@ -155,7 +155,8 @@ struct FullPlayer: View {
 
     @ViewBuilder private func headerButtons(_ t: Track) -> some View {
         LikeButton(track: t, size: 20, tint: Theme.fg).frame(width: 36, height: 36)
-        Menu { TrackMenuItems(track: t) } label: {
+        let src = player.source
+        Menu { TrackMenuItems(track: t, fromPlaylist: src?.owned == true ? src?.playlistId : nil, source: src) } label: {
             SynkIcon(SynkIcons.more, size: 22).frame(width: 36, height: 36).contentShape(Rectangle())
         }
         .menuOrder(.fixed)
@@ -245,7 +246,12 @@ private struct QueuePanel: View {
             }
             .padding(.bottom, 16)
             Text("Continue Playing").font(sans: 17, 600).foregroundStyle(Theme.fg)
-            if settings.autoplay {
+            if let src = player.source {
+                Button { Sheets.shared.navigate(src.route) } label: {
+                    Text("From \(src.name)").font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55)).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+            } else if settings.autoplay {
                 Text("Similar music plays when this ends").font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55))
             }
             List {

@@ -33,6 +33,8 @@ struct TrackMenuItems: View {
     let track: Track
     var fromPlaylist: String?
     var onRemoved: (() -> Void)?
+    /// What the player is playing from, so Go to can offer the playlist.
+    var source: PlaySource?
     @ObservedObject private var likes = LikesStore.shared
     @ObservedObject private var downloads = DownloadStore.shared
 
@@ -60,12 +62,17 @@ struct TrackMenuItems: View {
                 Button { startStation(track.artist) } label: { Label("Create Station", systemImage: "dot.radiowaves.left.and.right") }
             }
         }
-        if !track.albumhash.isEmpty || !track.artist.isEmpty {
+        if source?.playlistId != nil || !track.albumhash.isEmpty || !track.artist.isEmpty {
             Section {
                 Menu {
+                    if let src = source, src.playlistId != nil {
+                        Button { Sheets.shared.navigate(src.route) } label: {
+                            Label { Text("Go to Playlist"); Text(src.name) } icon: { Image(systemName: "music.note.list") }
+                        }
+                    }
                     if !track.albumhash.isEmpty {
                         Button { Sheets.shared.navigate(.album(track.albumhash)) } label: {
-                            Label { Text("Album"); Text(track.album) } icon: { Image(systemName: "square.stack") }
+                            Label { Text("Go to Album"); Text(track.album) } icon: { Image(systemName: "square.stack") }
                         }
                     }
                     if !track.artist.isEmpty {
@@ -73,7 +80,7 @@ struct TrackMenuItems: View {
                             let h = track.artists.first?.artisthash ?? ""
                             Sheets.shared.navigate(h.isEmpty ? .artistNamed(track.artist) : .artist(h))
                         } label: {
-                            Label { Text("Artist"); Text(track.artist) } icon: { Image(systemName: "music.mic") }
+                            Label { Text("Go to Artist"); Text(track.artist) } icon: { Image(systemName: "music.mic") }
                         }
                     }
                 } label: {

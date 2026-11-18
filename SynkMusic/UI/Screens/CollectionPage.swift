@@ -19,10 +19,10 @@ struct CollectionPage<MenuItems: View>: View {
     /// Your own playlist's id: shows Add Music and Suggested Songs.
     var editable: String?
     var onAdded: (() -> Void)?
+    var source: PlaySource?
     @ViewBuilder var menu: () -> MenuItems
 
     @EnvironmentObject private var player: PlayerController
-    @Environment(\.playTrack) private var play
     @State private var tint = Color(hex: 0x141414)
     @State private var scrolled = false
     @State private var filter = ""
@@ -33,6 +33,8 @@ struct CollectionPage<MenuItems: View>: View {
         if q.isEmpty { return tracks }
         return tracks.filter { $0.displayTitle.localizedCaseInsensitiveContains(q) || $0.artist.localizedCaseInsensitiveContains(q) }
     }
+
+    private func play(_ t: Track, _ list: [Track]) { Playback.play(t, in: list, from: source) }
 
     var body: some View {
         let width = UIScreen.main.bounds.width

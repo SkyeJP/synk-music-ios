@@ -30,7 +30,8 @@ enum Playback {
         return (PlayerClock.shared.positionMs, PlayerClock.shared.durationMs)
     }
 
-    static func play(_ t: Track, in list: [Track]) {
+    static func play(_ t: Track, in list: [Track], from source: PlaySource? = nil) {
+        player.source = source
         if cdc.isRemote {
             let q = list.isEmpty ? [t] : list
             cdc.send("playQueue", ["tracks": q, "startIndex": q.firstIndex { $0.hash == t.hash } ?? 0])
