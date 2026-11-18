@@ -185,13 +185,14 @@ final class LtClient: ObservableObject {
 
     private func snapshot(_ s: PlayerSnapshot, zeroTime: Bool = false) -> JSON {
         let pos = zeroTime ? 0 : s.positionMs
+        let w = RealtimeJSON.window(count: s.queue.count, index: max(0, s.index))
         return [
-            "queue": s.queue.prefix(200).map { t -> JSON in
+            "queue": s.queue[w].map { t -> JSON in
                 var o = RealtimeJSON.track(t)
                 o.removeValue(forKey: "coverUrl")
                 return o
             },
-            "queueIndex": max(0, s.index),
+            "queueIndex": max(0, s.index - w.lowerBound),
             "currentTrack": s.current.map { RealtimeJSON.track($0) as Any } ?? (NSNull() as Any),
             "isPlaying": s.isPlaying,
             "currentTime": Double(pos) / 1000,
@@ -200,7 +201,8 @@ final class LtClient: ObservableObject {
     }
 
     private func positionMs(_ st: JSON) -> Int? {
-        st.double("positionMs").map { Int($0) } ?? st.double("currentTime").map { Int($0 * 1000) }
+        let base = st.double("currentTime").map { Int($0 * 1000) } ?? st.double("positionMs").map { Int($0) }
+        return base.map { $0 + RealtimeJSON.lagMs(st) }
     }
 
     private func applyState(_ st: JSON?) {

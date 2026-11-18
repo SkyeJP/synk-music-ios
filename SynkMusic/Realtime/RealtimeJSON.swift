@@ -67,9 +67,24 @@ enum RealtimeJSON {
 
     static func tracks(_ any: Any?) -> [Track] { (any as? [Any])?.compactMap { parseTrack($0) } ?? [] }
 
+    /// Seconds first: the web only publishes seconds, and the server merges states,
+    /// so a ms field can be left over from an older publish by another client.
     static func positionMs(_ o: JSON, _ msKey: String, _ secondsKey: String) -> Int {
-        if let ms = o.double(msKey) { return max(0, Int(ms)) }
         if let s = o.double(secondsKey) { return max(0, Int(s * 1000)) }
+        if let ms = o.double(msKey) { return max(0, Int(ms)) }
         return 0
+    }
+
+    /// The part of a long queue that gets sent: 200 songs around the current one,
+    /// as the web does. Incoming indices are relative to its start.
+    static func window(count: Int, index: Int) -> Range<Int> {
+        let start = max(0, min(index - 20, count - 200))
+        return start..<min(count, start + 200)
+    }
+
+    /// How far a playing state has moved on since the server stamped it, at most 5 s.
+    static func lagMs(_ o: JSON) -> Int {
+        guard o.bool("isPlaying") == true, let ts = o.double("timestamp") else { return 0 }
+        return min(5000, max(0, Int(Date().timeIntervalSince1970 * 1000 - ts)))
     }
 }

@@ -57,5 +57,5 @@ enum Playback {
     static func playIndex(_ i: Int) { cdc.isRemote ? cdc.send("playIndex", ["index": i]) : player.playIndex(i) }
     static func toggleShuffle() { cdc.isRemote ? cdc.send("toggleShuffle") : player.toggleShuffle() }
     static func cycleRepeat() { cdc.isRemote ? cdc.send("cycleRepeat") : player.cycleRepeat() }
-    static func setVolume(_ v: Float) { player.setVolume(v) }
+    static func setVolume(_ v: Float) { cdc.isRemote ? cdc.send("setVolume", ["volume": Double(v)]) : player.setVolume(v) }
 }

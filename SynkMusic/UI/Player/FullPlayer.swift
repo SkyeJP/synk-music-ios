@@ -97,7 +97,7 @@ struct FullPlayer: View {
                     if mode == .player {
                         HStack(spacing: 12) {
                             SynkIcon(SynkIcons.volume, size: 16, tint: Theme.fg.opacity(0.6))
-                            SeekBar(value: Double(player.volume), total: 1) { Playback.setVolume(Float($0)) }.frame(height: 24)
+                            SeekBar(value: Double(s.volume), total: 1) { Playback.setVolume(Float($0)) }.frame(height: 24)
                             SynkIcon(SynkIcons.volume, size: 20, tint: Theme.fg.opacity(0.6))
                         }
                         .padding(.top, 20)

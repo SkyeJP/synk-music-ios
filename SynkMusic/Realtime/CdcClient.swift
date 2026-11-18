@@ -60,6 +60,8 @@ final class CdcClient: ObservableObject {
     private var lastPos = 0
     private var lastPlaying = false
     private var forcePublish = false
+    /// Start of the queue window last sent; incoming indices are relative to it.
+    private var queueOffset = 0
 
     var isRemote: Bool { activeId != nil && activeId != selfId }
     var activeDevice: CdcDevice? { devices.first { $0.deviceId == activeId } }
@@ -97,6 +99,20 @@ final class CdcClient: ObservableObject {
                 if playing { Task { @MainActor in self?.onLocalPlaybackStarted() } }
             }
         }
+    }
+
+    /// Backgrounded while paused: drop the stream so the server stops treating
+    /// this phone as the active device and other devices don't send it commands.
+    func suspend() {
+        guard streamTask != nil else { return }
+        streamTask?.cancel(); streamTask = nil
+        connected = false
+    }
+
+    /// Back in the foreground: reconnect and publish straight away.
+    func resume() {
+        connect()
+        forcePublish = true
     }
 
     func disconnect() {
@@ -227,8 +243,10 @@ final class CdcClient: ObservableObject {
     }
 
     private func localState(_ p: PlayerSnapshot) -> JSON {
-        let q = Array(p.queue.prefix(200))
-        let idx = q.indices.contains(p.index) ? p.index : 0
+        let w = RealtimeJSON.window(count: p.queue.count, index: max(0, p.index))
+        queueOffset = w.lowerBound
+        let q = Array(p.queue[w])
+        let idx = q.indices.contains(p.index - w.lowerBound) ? p.index - w.lowerBound : 0
         return [
             "currentTrack": p.current.map { RealtimeJSON.track($0) as Any } ?? (NSNull() as Any),
             "queue": q.map { RealtimeJSON.track($0) },
@@ -285,15 +303,15 @@ final class CdcClient: ObservableObject {
         case "setVolume": if let v = params.double("volume") { player.setVolume(Float(v)) }
         case "toggleShuffle": player.toggleShuffle()
         case "cycleRepeat": player.cycleRepeat()
-        case "playIndex": if let i = params.int("index") { player.playIndex(i) }
+        case "playIndex": if let i = params.int("index") { player.playIndex(i + queueOffset) }
         case "playQueue":
             let tracks = RealtimeJSON.tracks(params["tracks"])
             if !tracks.isEmpty { player.playQueue(tracks, start: min(max(0, params.int("startIndex") ?? 0), tracks.count - 1)) }
         case "addNext": if let t = RealtimeJSON.parseTrack(params["track"]) { player.addNext(t) }
         case "addToQueue": if let t = RealtimeJSON.parseTrack(params["track"]) { player.addToQueue(t) }
         case "clearQueue": player.clearUpcoming()
-        case "removeFromQueue": if let i = params.int("queueIndex") { player.removeFromQueue(i) }
-        case "moveInQueue": if let f = params.int("from"), let t = params.int("to") { player.moveInQueue(from: f, to: t) }
+        case "removeFromQueue": if let i = params.int("queueIndex") { player.removeFromQueue(i + queueOffset) }
+        case "moveInQueue": if let f = params.int("from"), let t = params.int("to") { player.moveInQueue(from: f + queueOffset, to: t + queueOffset) }
         default: break
         }
         forcePublish = true
@@ -329,7 +347,7 @@ final class CdcClient: ObservableObject {
         if queue.isEmpty, let cur { queue = [cur]; idx = 0 }
         guard !queue.isEmpty else { return }
         idx = min(max(0, idx), queue.count - 1)
-        player.playQueue(queue, start: idx, positionMs: RealtimeJSON.positionMs(st, "positionMs", "currentTime"), autoplay: st.bool("isPlaying") ?? true)
+        player.playQueue(queue, start: idx, positionMs: RealtimeJSON.positionMs(st, "positionMs", "currentTime") + RealtimeJSON.lagMs(st), autoplay: st.bool("isPlaying") ?? true)
         if let s = st.bool("shuffle") { player.setShuffle(s) }
         if let r = st.str("repeatMode") { player.setRepeat(RepeatMode(name: r)) }
         if let v = st.double("volume") { player.setVolume(Float(v)) }
@@ -345,8 +363,7 @@ final class CdcClient: ObservableObject {
             else if let ts = v as? [Track] { p[k] = ts.map { RealtimeJSON.track($0) } }
             else { p[k] = v }
         }
-        var body: JSON = ["command": command, "deviceId": selfId, "targetDeviceId": target, "params": p]
-        for (k, v) in p { body[k] = v }
+        let body: JSON = ["command": command, "deviceId": selfId, "targetDeviceId": target, "params": p]
         post("/api/sync/command", body)
 
         guard var cur = remoteState else { return }

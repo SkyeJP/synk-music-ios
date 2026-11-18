@@ -50,6 +50,7 @@ struct AppShell: View {
     @State private var paths: [ShellTab: [Route]] = [:]
     @State private var playerOpen = false
     @State private var newPlaylistName = ""
+    @Environment(\.scenePhase) private var scenePhase
     @Namespace private var zoom
 
     var body: some View {
@@ -81,6 +82,10 @@ struct AppShell: View {
                 bindNavigate(tab)
             }
             .onChange(of: tab) { _, t in bindNavigate(t) }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background && !player.isPlaying { cdc.suspend() }
+                if phase == .active { cdc.resume() }
+            }
     }
 
     /// Menus open pages in the tab that is showing.
