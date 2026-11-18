@@ -43,6 +43,11 @@ workflows:
       - name: Build unsigned Release
         script: |
           #!/bin/bash
+          # SideStore only offers an update when the version string changes, so the
+          # build number becomes the patch: MARKETING_VERSION 4.0.x in project.yml -> 4.0.<build>.
+          BASE=$(grep -m1 'MARKETING_VERSION' project.yml | sed -E 's/.*"([0-9]+)\.([0-9]+).*/\1.\2/')
+          VERSION="$BASE.${BUILD_NUMBER:-0}"
+          echo "Version $VERSION (build ${BUILD_NUMBER:-1})"
           xcodebuild \
             -project SynkMusic.xcodeproj \
             -scheme "$SCHEME" \
@@ -50,7 +55,7 @@ workflows:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
-            CURRENT_PROJECT_VERSION="${BUILD_NUMBER:-1}" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${BUILD_NUMBER:-1}" \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
             build > xcodebuild.log 2>&1 && STATUS=0 || STATUS=$?
           # Compiler errors first, deduplicated, so they are easy to copy from the log.
