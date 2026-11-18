@@ -260,7 +260,7 @@ final class PlayerController: ObservableObject {
             if !ready {
                 asset.cancelLoading()
                 mp3Only.insert(t.hash)
-                DebugLog.shared.add("\(t.displayTitle): ALAC not ready, playing MP3 this time")
+                DebugLog.shared.add("\(t.displayTitle): ALAC not ready, playing MP3 this time", issue: false)
                 return await makeItem(t)
             }
         }
@@ -290,12 +290,12 @@ final class PlayerController: ObservableObject {
     /// A downloaded file, a prefetched file, or a fresh stream URL.
     private func resolve(_ t: Track) async -> URL? {
         if let local = DownloadStore.shared.localURL(t) {
-            DebugLog.log("play \(t.displayTitle) from download (\(local.pathExtension))")
+            DebugLog.log("play \(t.displayTitle) from download (\(local.pathExtension))", issue: false)
             return local
         }
         let q = SettingsStore.shared.requestQuality
         if let cached = AudioCache.file(t.hash, quality: q) {
-            DebugLog.log("play \(t.displayTitle) from cache (\(cached.pathExtension))")
+            DebugLog.log("play \(t.displayTitle) from cache (\(cached.pathExtension))", issue: false)
             return cached
         }
         // AVPlayer plays FLAC from a file but cannot open it over HTTP ("resource
@@ -307,7 +307,7 @@ final class PlayerController: ObservableObject {
         for quality in tries {
             do {
                 if let u = try await API.shared.streamURL(t, quality: quality) {
-                    DebugLog.log("play \(t.displayTitle) streaming \(quality)")
+                    DebugLog.log("play \(t.displayTitle) streaming \(quality)", issue: false)
                     return u
                 }
             } catch {
@@ -366,7 +366,7 @@ final class PlayerController: ObservableObject {
             Task.detached { await PlayerController.probe(url, t.displayTitle) }
             if url.query?.contains("quality=alac") == true, !mp3Only.contains(t.hash) {
                 mp3Only.insert(t.hash)
-                DebugLog.shared.add("\(t.displayTitle): ALAC failed, trying MP3")
+                DebugLog.shared.add("\(t.displayTitle): ALAC failed, trying MP3", issue: false)
                 load(index, positionMs: positionMs, autoplay: true)
                 return
             }

@@ -100,7 +100,7 @@ final class DownloadStore: ObservableObject {
                 DebugLog.shared.add("download \(t.displayTitle): \(error.localizedDescription)")
             }
             downloading.remove(k)
-            if entry != nil { DebugLog.shared.add("downloaded \(t.displayTitle)") }
+            if entry != nil { DebugLog.shared.add("downloaded \(t.displayTitle)", issue: false) }
             if let entry {
                 entries[k] = entry
                 save()
