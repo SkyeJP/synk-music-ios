@@ -64,6 +64,8 @@ final class PlayerController: ObservableObject {
     private var preloadToken = 0
     private var preloadedIndex: Int?
     private var retried: String?
+    /// Songs whose ALAC was not ready in time this session; they stream as MP3.
+    private var mp3Only: Set<String> = []
     private var wantsPlay = false
     private var observers: [NSObjectProtocol] = []
     private var kvo: [NSKeyValueObservation] = []
@@ -241,6 +243,27 @@ final class PlayerController: ObservableObject {
     private func makeItem(_ t: Track) async -> SynkItem? {
         guard let url = await resolve(t) else { return nil }
         let asset = AVURLAsset(url: url)
+        // A song's first ALAC play waits for the server to convert all of it. Rather
+        // than leave the player silent, use the MP3 for this play; the server keeps
+        // converting, so the next play is lossless.
+        if url.query?.contains("quality=alac") == true {
+            let ready = await withTaskGroup(of: Bool.self) { g -> Bool in
+                g.addTask { (try? await asset.loadTracks(withMediaType: .audio).first) != nil }
+                g.addTask {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    return false
+                }
+                let first = await g.next() ?? false
+                g.cancelAll()
+                return first
+            }
+            if !ready {
+                asset.cancelLoading()
+                mp3Only.insert(t.hash)
+                DebugLog.shared.add("\(t.displayTitle): ALAC not ready, playing MP3 this time")
+                return await makeItem(t)
+            }
+        }
         let item = SynkItem(asset: asset)
         item.trackHash = t.hash
         item.title = t.displayTitle
@@ -278,7 +301,7 @@ final class PlayerController: ObservableObject {
         // AVPlayer plays FLAC from a file but cannot open it over HTTP ("resource
         // unavailable"). For lossless or default the server converts FLAC to ALAC,
         // which streams; if it cannot, it sends a 320 MP3 instead.
-        let streamQ = (q == nil || q == "flac") ? "alac" : q!
+        let streamQ = (q == nil || q == "flac") ? (mp3Only.contains(t.hash) ? "320" : "alac") : q!
         var tries = [streamQ]
         for fallback in ["320", "128"] where !tries.contains(fallback) { tries.append(fallback) }
         for quality in tries {
