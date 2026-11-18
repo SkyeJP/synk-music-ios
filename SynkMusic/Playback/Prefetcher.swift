@@ -88,7 +88,10 @@ final class Prefetcher {
         var req = URLRequest(url: url)
         req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
         guard let res = try? await URLSession.shared.download(for: req),
-              let http = res.1 as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
+              let http = res.1 as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            if !Task.isCancelled { DebugLog.log("cache \(t.displayTitle): download failed") }
+            return
+        }
         let tmp = res.0
         if Task.isCancelled { try? FileManager.default.removeItem(at: tmp); return }
         let ext = AudioFile.ext(contentType: http.value(forHTTPHeaderField: "Content-Type"), url: url)

@@ -266,17 +266,27 @@ final class PlayerController: ObservableObject {
 
     /// A downloaded file, a prefetched file, or a fresh stream URL.
     private func resolve(_ t: Track) async -> URL? {
-        if let local = DownloadStore.shared.localURL(t) { return local }
-        let q = SettingsStore.shared.requestQuality
-        if let cached = AudioCache.file(t.hash, quality: q) { return cached }
-        do {
-            if let u = try await API.shared.streamURL(t, quality: q) { return u }
-        } catch {
-            DebugLog.log("stream/token \(t.displayTitle) quality \(q ?? "default"): \(error.localizedDescription)")
+        if let local = DownloadStore.shared.localURL(t) {
+            DebugLog.log("play \(t.displayTitle) from download (\(local.pathExtension))")
+            return local
         }
-        if q != nil {
-            do { return try await API.shared.streamURL(t, quality: nil) } catch {
-                DebugLog.log("stream/token \(t.displayTitle) default: \(error.localizedDescription)")
+        let q = SettingsStore.shared.requestQuality
+        if let cached = AudioCache.file(t.hash, quality: q) {
+            DebugLog.log("play \(t.displayTitle) from cache (\(cached.pathExtension))")
+            return cached
+        }
+        // AVPlayer plays FLAC from a file but cannot open it over HTTP ("resource
+        // unavailable"), and lossless or default can be FLAC. Stream MP3 for now;
+        // the prefetcher caches the requested quality, which plays next time.
+        let streamQ = (q == nil || q == "flac") ? "320" : q!
+        for quality in [streamQ, "128"] {
+            do {
+                if let u = try await API.shared.streamURL(t, quality: quality) {
+                    DebugLog.log("play \(t.displayTitle) streaming \(quality)")
+                    return u
+                }
+            } catch {
+                DebugLog.log("stream/token \(t.displayTitle) quality \(quality): \(error.localizedDescription)")
             }
         }
         return nil
@@ -352,11 +362,12 @@ final class PlayerController: ObservableObject {
         if isPlaying { tracker.onPlayingChanged(true) }
     }
 
+    /// The playing song, then the next ones, so each is cached in full quality.
     private func prefetchWindow() -> [Track] {
-        var out: [Track] = []
+        var out: [Track] = current.map { [$0] } ?? []
         var i = index
-        var seen: Set<String> = []
-        while out.count < Prefetcher.ahead, let n = nextIndex(from: i, wrap: repeatMode == .all), n != index {
+        var seen: Set<String> = Set(out.map { $0.hash })
+        while out.count < Prefetcher.ahead + 1, let n = nextIndex(from: i, wrap: repeatMode == .all), n != index {
             let t = queue[n]
             if !seen.contains(t.hash) { out.append(t); seen.insert(t.hash) }
             i = n
