@@ -377,7 +377,7 @@ struct SettingsView: View {
             nav("Diagnostics", "Recent playback and download problems, to copy and send") { navigate(.diagnostics) }
             SettingsCard {
                 Text("Version").font(sans: 15, 500).foregroundStyle(Theme.fg)
-                Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                     .font(sans: 12).foregroundStyle(Theme.muted)
             }
         }

@@ -93,12 +93,11 @@ workflows:
             INFO="build/Build/Products/Release-iphoneos/$APP_NAME.app/Info.plist"
             BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO")
             VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")
-            BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")
             MIN_OS=$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$INFO")
             SIZE=$(stat -f%z "$IPA_NAME")
             DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            VERSIONED="synkmusic-$VERSION-$BUILD.ipa"
-            echo "Publishing $BUNDLE_ID $VERSION ($BUILD), $SIZE bytes"
+            VERSIONED="synkmusic-$VERSION.ipa"
+            echo "Publishing $BUNDLE_ID $VERSION, $SIZE bytes"
 
             mkdir -p ~/.ssh
             printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/mirror_key
@@ -109,20 +108,23 @@ workflows:
             # Keep the versions already listed, newest first.
             curl -fsS "$MIRROR_URL/source.json" -o old-source.json || echo '{}' > old-source.json
 
-            python3 - "$BUNDLE_ID" "$VERSION" "$BUILD" "$DATE" "$SIZE" "$MIRROR_URL/$VERSIONED" "$MIN_OS" "$MIRROR_URL" <<'PY'
+            python3 - "$BUNDLE_ID" "$VERSION" "$DATE" "$SIZE" "$MIRROR_URL/$VERSIONED" "$MIN_OS" "$MIRROR_URL" <<'PY'
             import json, sys
-            bundle, version, build, date, size, url, min_os, base = sys.argv[1:]
+            bundle, version, date, size, url, min_os, base = sys.argv[1:]
             try:
                 old = json.load(open("old-source.json"))
                 prev = [v for a in old.get("apps", []) if a.get("bundleIdentifier") == bundle for v in a.get("versions", [])]
             except Exception:
                 prev = []
             entry = {
-                "version": version, "buildVersion": build, "date": date,
-                "localizedDescription": f"SYNK {version} (build {build})",
+                "version": version, "date": date,
+                "localizedDescription": f"SYNK {version}",
                 "downloadURL": url, "size": int(size), "minOSVersion": min_os,
             }
-            versions = [entry] + [v for v in prev if not (v.get("version") == version and v.get("buildVersion") == build)]
+            for v in prev:
+                v.pop("buildVersion", None)
+                v["localizedDescription"] = f"SYNK {v.get('version', '')}"
+            versions = [entry] + [v for v in prev if v.get("version") != version]
             source = {
                 "name": "SYNK Music",
                 "identifier": "uk.co.gafftech.mirrors.synk",
