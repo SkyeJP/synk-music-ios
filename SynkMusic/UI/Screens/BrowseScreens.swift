@@ -666,13 +666,6 @@ struct LibraryPageView: View {
 
 private func minutes(_ tracks: [Track]) -> Int { tracks.reduce(0) { $0 + $1.durationSeconds } / 60 }
 
-private struct MoreButton: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) { SynkIcon(SynkIcons.more, size: 20) }.accessibilityLabel("More")
-    }
-}
-
 struct AlbumView: View {
     let id: String
     @State private var album: Album?
@@ -706,7 +699,7 @@ struct AlbumView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if let a = album { MoreButton { Sheets.shared.album(a, tracks: tracks) } }
+                if let a = album { MoreMenu { AlbumMenuItems(album: a, tracks: tracks) } }
             }
         }
         .task {
@@ -731,6 +724,7 @@ struct PlaylistView: View {
     @State private var info: Playlist?
     @State private var tracks: [Track] = []
     @State private var error = ""
+    @State private var confirmDelete = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -756,11 +750,23 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if let p = info { MoreButton { openMenu(p) } }
+                if let p = info {
+                    MoreMenu { PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p)) { confirmDelete = true } }
+                }
             }
         }
         .task { if info == nil { await load() } }
         .refreshable { await load() }
+        .confirmationDialog("Delete this playlist?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete Playlist", role: .destructive) {
+                Task {
+                    if (try? await API.shared.deletePlaylist(id)) != nil {
+                        await LibraryModel.shared.load()
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 
     private var meta: String {
@@ -768,10 +774,9 @@ struct PlaylistView: View {
         return "\(tracks.count) songs, " + (m >= 60 ? "\(m / 60) hr \(m % 60) min" : "\(m) min")
     }
 
-    private func openMenu(_ p: Playlist) {
+    private func isOwner(_ p: Playlist) -> Bool {
         let me = AuthStore.shared.user
-        let owner = me != nil && (p.ownerId == me?.id || p.owner == me?.username)
-        Sheets.shared.playlist(id: id, name: p.name, cover: p.coverUrl, tracks: tracks, isOwner: owner) { dismiss() }
+        return me != nil && (p.ownerId == me?.id || p.owner == me?.username)
     }
 
     private func load() async {

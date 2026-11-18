@@ -51,8 +51,8 @@ struct FullPlayer: View {
                             }
                             Spacer(minLength: 0)
                             LikeButton(track: t, size: 20, tint: Theme.fg).glassCircle(40)
-                            Button { Sheets.shared.track(t) } label: { SynkIcon(SynkIcons.more, size: 22).glassCircle(40) }
-                                .buttonStyle(.plain)
+                            Menu { TrackMenuItems(track: t) } label: { SynkIcon(SynkIcons.more, size: 22).glassCircle(40) }
+                                .menuOrder(.fixed)
                                 .accessibilityLabel("More")
                         }
                         .padding(.top, 24)

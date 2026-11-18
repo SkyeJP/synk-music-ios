@@ -78,6 +78,7 @@ struct AppShell: View {
             .onChange(of: state.current == nil) { _, none in if none { playerOpen = false } }
             .onAppear {
                 LikesStore.shared.refresh()
+                Task { await LibraryModel.shared.loadPlaylists() }
                 cdc.connect()
                 bindNavigate(tab)
             }

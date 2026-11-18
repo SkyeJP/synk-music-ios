@@ -378,17 +378,15 @@ struct TrackRow: View {
             }
             Spacer(minLength: 8)
             if showLike && !numbered { LikeButton(track: track) }
-            Button { Sheets.shared.track(track, fromPlaylist: fromPlaylist, onRemoved: onRemoved) } label: {
-                SynkIcon(SynkIcons.more, size: 22, tint: Theme.fg.opacity(0.7))
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
+            MoreMenu(tint: Theme.fg.opacity(0.7)) {
+                TrackMenuItems(track: track, fromPlaylist: fromPlaylist, onRemoved: onRemoved)
             }
-            .buttonStyle(.plain)
         }
         .padding(.vertical, numbered ? 6 : 7)
         .padding(.horizontal, 10)
         .contentShape(Rectangle())
         .onTapGesture { if current { Playback.toggle() } else { action() } }
+        .contextMenu { TrackMenuItems(track: track, fromPlaylist: fromPlaylist, onRemoved: onRemoved) }
         .hairline(numbered ? 40 : 70)
     }
 }
