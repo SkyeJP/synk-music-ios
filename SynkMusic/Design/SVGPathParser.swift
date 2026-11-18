@@ -6,7 +6,7 @@ import Foundation
 enum SVGPathParser {
     static func parse(_ d: String) -> CGPath {
         let path = CGMutablePath()
-        var scanner = Scanner(d)
+        var scanner = PathScanner(d)
 
         var current = CGPoint.zero
         var start = CGPoint.zero
@@ -21,6 +21,7 @@ enum SVGPathParser {
         while let cmd = scanner.nextCommand() {
             let isRel = cmd.isLowercase
             let C = Character(cmd.uppercased())
+            let prevCommand = lastCommand
             lastCommand = cmd
 
             switch C {
@@ -73,7 +74,7 @@ enum SVGPathParser {
                 while scanner.peekIsNumber() {
                     guard let x2 = scanner.nextNumber(), let y2 = scanner.nextNumber(),
                           let x = scanner.nextNumber(), let y = scanner.nextNumber() else { break }
-                    let c1 = (lastCommand == "C" || lastCommand == "c" || lastCommand == "S" || lastCommand == "s")
+                    let c1 = (prevCommand == "C" || prevCommand == "c" || prevCommand == "S" || prevCommand == "s")
                         ? reflect(lastControl, about: current) : current
                     let c2 = isRel ? CGPoint(x: current.x + x2, y: current.y + y2) : CGPoint(x: x2, y: y2)
                     let end = isRel ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
@@ -94,7 +95,7 @@ enum SVGPathParser {
             case "T":
                 while scanner.peekIsNumber() {
                     guard let x = scanner.nextNumber(), let y = scanner.nextNumber() else { break }
-                    let c1 = (lastCommand == "Q" || lastCommand == "q" || lastCommand == "T" || lastCommand == "t")
+                    let c1 = (prevCommand == "Q" || prevCommand == "q" || prevCommand == "T" || prevCommand == "t")
                         ? reflect(lastControl, about: current) : current
                     let end = isRel ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
                     path.addQuadCurve(to: end, control: c1)
@@ -196,7 +197,7 @@ enum SVGPathParser {
 }
 
 // Lightweight character scanner tuned for SVG path syntax.
-private struct Scanner {
+private struct PathScanner {
     private let chars: [Character]
     private var i = 0
     init(_ s: String) { chars = Array(s) }

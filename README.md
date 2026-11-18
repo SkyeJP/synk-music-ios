@@ -1,7 +1,7 @@
-# SYNK Music — iOS
+# SYNK Music for iOS
 
 Native SwiftUI client for **SYNK Music**, mirroring the Linux (Qt6) desktop app
-and the Android (Compose) app. Talks to the SYNK API at `https://api.synkmusic.xyz`.
+and the Android (Compose) app. Talks to the SYNK API at `https://synkmusic.co.uk/api/`.
 
 ## Requirements
 
@@ -9,13 +9,13 @@ and the Android (Compose) app. Talks to the SYNK API at `https://api.synkmusic.x
   - Match Xcode to your **device's** iOS version: deploying to a device on
     **iOS 27 (e.g. iPhone 17) requires Xcode 27** (which ships the iOS 27 SDK).
     Xcode 16 tops out around iOS 18 and cannot install to an iOS 27 device.
-- [XcodeGen](https://github.com/yonwoo9/XcodeGen) — `brew install xcodegen`.
-- Deployment target is iOS 17.0, so the app _runs on_ iOS 17+, but the SDK used
+- [XcodeGen](https://github.com/yonwoo9/XcodeGen), `brew install xcodegen`.
+- Deployment target is iOS 18.0, so the app _runs on_ iOS 18+ (Liquid Glass on iOS 26+), but the SDK used
   to _build for a device_ must be ≥ that device's OS.
 
 ## Generating the Xcode project
 
-The `.xcodeproj` is **not** committed — it is generated from `project.yml`:
+The `.xcodeproj` is **not** committed, it is generated from `project.yml`:
 
 ```sh
 brew install xcodegen      # once
@@ -36,53 +36,53 @@ xcodebuild -project SynkMusic.xcodeproj -scheme SynkMusic \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-## Continuous integration
+## Builds and releases (Codemagic)
 
-Both CI systems generate the project with XcodeGen first, since the
-`.xcodeproj` is not committed.
+`codemagic.yaml` builds an **unsigned** Release IPA on every push to `main`
+(`mac_mini_m2`, latest Xcode), packages it as `Payload/SYNK.app` in
+`synkmusic.ipa`, and publishes it to the GaffTech mirror with an AltStore /
+SideStore source:
 
-- **GitHub Actions** (`.github/workflows/build.yml`) — runs on `macos-26`.
-  - `build` — every push/PR to `main`: unsigned simulator compile with the
-    **newest Xcode on the runner** (currently Xcode 26.x). No secrets required.
-  - `archive` — `main` / manual dispatch: signed device archive + IPA export
-    for an **iOS 27** device, uploaded as `SynkMusic-ipa`. This job needs
-    **Xcode 27**, which isn't on `macos-26` yet — until it lands, the job
-    **skips itself cleanly** (green run, notice in the log) instead of failing.
-    It also skips when the signing secrets below are absent.
+- Source to add in SideStore or AltStore: `https://mirrors.gafftech.co.uk/ios/source.json`
+- Latest IPA (also works with Signulous): `https://mirrors.gafftech.co.uk/ios/synkmusic.ipa`
 
-- **GitLab CI** (`.gitlab-ci.yml`) — mirrors the unsigned simulator build on a
-  runner tagged `macos`, plus secret detection on the shared Linux runners.
+Create an environment group named `mirror` in Codemagic with:
 
-### Secrets for signed builds (GitHub → Settings → Secrets → Actions)
+| Variable          | Value                                                         |
+| ----------------- | ------------------------------------------------------------- |
+| `SSH_PRIVATE_KEY` | Private key that can log in to the mirror (mark it secure)    |
+| `MIRROR_USER`     | SSH user on the mirror                                        |
+| `MIRROR_PATH`     | Folder served as `/ios`, e.g. `/opt/repositories/hostedbysynk/ios` |
 
-| Secret                         | Description                                     |
-| ------------------------------ | ----------------------------------------------- |
-| `BUILD_CERTIFICATE_P12_BASE64` | Base64 of your Apple Development `.p12`         |
-| `P12_PASSWORD`                 | Password for that `.p12`                        |
-| `PROVISIONING_PROFILE_BASE64`  | Base64 of the `.mobileprovision`                |
-| `APPLE_TEAM_ID`                | 10-char Apple Developer Team ID                 |
-| `KEYCHAIN_PASSWORD`            | Any throwaway password for the temp CI keychain |
-
-Encode files with `base64 -i cert.p12 | pbcopy`. A **free** Apple ID can sign for
-on-device testing, but automated IPA export in CI needs a real certificate +
-profile; without them, use Xcode locally (⌘R) to run on your iPhone.
+`MIRROR_HOST` and `MIRROR_URL` default to `mirrors.gafftech.co.uk` and
+`https://mirrors.gafftech.co.uk/ios`. Compiler errors are listed at the top of
+the "Build unsigned Release" step, and the full log is the `xcodebuild.log`
+artifact.
 
 ## Project layout
 
 ```
 SynkMusic/
-  App/            SynkMusicApp (entry), RootView
-  Networking/     API client, Codable models, Keychain AuthStore
-  Stores/         SessionStore, LikesStore, DownloadStore, SettingsStore
-  Playback/       PlayerController (AVPlayer), MiniPlayer, FullPlayer,
-                  LyricsView, QueueView, ListenTracker, DominantColor
-  Screens/        Home, Search, Library, Detail, Analytics, Profile,
-                  Settings, Equalizer, Downloads, Auth
-  Components/     Artwork, TrackRow/LikeButton/DownloadButton, TrackActionsSheet
-  Design/         Theme (colors + fonts), SynkIcons (heroicons), SVGPathParser
-  Fonts/          Host Grotesk (UI) + Figtree (lyrics)
+  App/            entry point, session, sign in
+  Network/        API client and lenient Codable models
+  Data/           Keychain auth, settings, likes, downloads
+  Playback/       PlayerController (AVQueuePlayer, gapless preload), Equalizer
+                  (biquads in an audio tap), DeviceTuning, Prefetcher, Playback router
+  Realtime/       Connect (CdcClient, server-sent events), Listen Together (LtClient)
+  UI/             Theme, icons, components, shell, player, lyrics, screens
+  Design/         SVGPathParser
+  Fonts/          Host Grotesk (headings) and Figtree (body), variable fonts
   Assets.xcassets AppIcon, SynkLogo, LaunchBackground
 ```
+
+## Layout
+
+The app follows the SYNK phone site (m.synkmusic.co.uk), the same as the
+Android app: Home, Explore, Radio, Library and Search tabs, the account sheet
+behind the avatar button, and the now playing screen with inline lyrics,
+devices and queue. On iOS 26 and later it uses the system Liquid Glass tab
+bar, with the mini player in the tab bar's accessory and Search as the
+separate search tab; earlier versions get a frosted glass pill instead.
 
 ## Conventions
 
@@ -94,9 +94,15 @@ SynkMusic/
 
 ## Notes
 
-- Background audio + lock-screen controls via `AVAudioSession(.playback)` +
-  `MPRemoteCommandCenter` / `MPNowPlayingInfoCenter`.
-- Stream URLs are resolved up-front before `AVPlayerItem` creation so playback
-  starts reliably (same lesson as the Android fix).
-- The EQ screen persists 10 bands; wiring them into an `AVAudioEngine` graph is a
-  follow-up (AVPlayer doesn't expose a band EQ directly).
+- Background audio and lock screen controls via `AVAudioSession(.playback)`,
+  `MPRemoteCommandCenter` and `MPNowPlayingInfoCenter`.
+- The 10-band EQ and device tuning run as RBJ biquads in an
+  `MTAudioProcessingTap` on every player item, the same maths as Android's
+  `EqualizerAudioProcessor`.
+- The next four songs in the queue are cached whole in `Caches/audio`
+  (1 GB, least recently used first out), and the next song is preloaded into
+  the player for gapless playback.
+- Listen Together links (`https://synkmusic.co.uk/?lt=<id>` or `synk://?lt=<id>`)
+  open the session. The https form needs an Associated Domains entitlement and
+  an `apple-app-site-association` file on the site, which sideloaded builds
+  don't have, so share links open in the browser there.

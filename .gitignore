@@ -16,3 +16,10 @@ Package.resolved
 # Fastlane / signing
 *.mobileprovision
 *.p12
+
+# Codemagic packaging
+Payload/
+*.ipa
+xcodebuild.log
+source.json
+old-source.json

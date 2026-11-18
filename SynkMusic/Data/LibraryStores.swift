@@ -1,0 +1,156 @@
+import Foundation
+import CryptoKit
+
+/// Liked songs keyed by ISRC (or hash), updated optimistically like Android's LikesStore.
+@MainActor
+final class LikesStore: ObservableObject {
+    static let shared = LikesStore()
+    @Published private(set) var liked: Set<String> = []
+
+    func key(_ t: Track) -> String {
+        if let i = t.isrc?.trimmingCharacters(in: .whitespaces), !i.isEmpty { return i }
+        return t.hash.isEmpty ? "\(t.artist)::\(t.displayTitle)".lowercased() : t.hash
+    }
+
+    func isLiked(_ t: Track) -> Bool { liked.contains(key(t)) }
+
+    func refresh() {
+        Task {
+            guard let tracks = try? await API.shared.liked() else { return }
+            liked = Set(tracks.map { key($0) })
+        }
+    }
+
+    func toggle(_ t: Track) {
+        let k = key(t)
+        let was = liked.contains(k)
+        if was { liked.remove(k) } else { liked.insert(k) }
+        let hash = t.hash.isEmpty ? (t.isrc ?? "") : t.hash
+        Task {
+            var ok = false
+            if !hash.isEmpty { ok = (try? await API.shared.setLiked(hash, !was)) != nil }
+            if !ok { if was { liked.insert(k) } else { liked.remove(k) } }
+        }
+    }
+}
+
+struct DownloadEntry: Codable, Hashable {
+    var key: String
+    var file: String
+    var id: String
+    var title: String
+    var artist: String
+    var album = ""
+    var coverUrl = ""
+    var durationMs = 0
+}
+
+/// Songs saved for offline play in Application Support/downloads, with a JSON manifest.
+@MainActor
+final class DownloadStore: ObservableObject {
+    static let shared = DownloadStore()
+    @Published private(set) var entries: [String: DownloadEntry] = [:]
+    @Published private(set) var downloading: Set<String> = []
+
+    nonisolated static let dir: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let d = base.appendingPathComponent("downloads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        var u = d
+        var rv = URLResourceValues()
+        rv.isExcludedFromBackup = true
+        try? u.setResourceValues(rv)
+        return d
+    }()
+    private var manifest: URL { DownloadStore.dir.appendingPathComponent("manifest.json") }
+
+    private init() { load() }
+
+    nonisolated static func key(_ t: Track) -> String {
+        let base = (t.artist + "\u{1}" + t.displayTitle).lowercased()
+        return Insecure.MD5.hash(data: Data(base.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    func key(_ t: Track) -> String { DownloadStore.key(t) }
+
+    func isDownloaded(_ t: Track) -> Bool { localURL(t) != nil }
+
+    func localURL(_ t: Track) -> URL? {
+        guard let e = entries[key(t)] else { return nil }
+        let u = DownloadStore.dir.appendingPathComponent(e.file)
+        return FileManager.default.fileExists(atPath: u.path) ? u : nil
+    }
+
+    var tracks: [Track] {
+        entries.values.sorted { $0.title.lowercased() < $1.title.lowercased() }.map {
+            Track(id: $0.id, trackhash: $0.id, title: $0.title, artist: $0.artist, album: $0.album,
+                  image: $0.coverUrl, duration: $0.durationMs / 1000, durationMs: $0.durationMs)
+        }
+    }
+
+    func toggle(_ t: Track) { isDownloaded(t) ? remove(t) : download(t) }
+
+    func download(_ t: Track) {
+        let k = key(t)
+        if isDownloaded(t) || downloading.contains(k) { return }
+        downloading.insert(k)
+        let quality = SettingsStore.shared.requestQuality
+        Task {
+            let entry = try? await DownloadStore.fetch(t, key: k, quality: quality)
+            downloading.remove(k)
+            if let entry {
+                entries[k] = entry
+                save()
+            }
+        }
+    }
+
+    func remove(_ t: Track) {
+        let k = key(t)
+        if let e = entries[k] { try? FileManager.default.removeItem(at: DownloadStore.dir.appendingPathComponent(e.file)) }
+        entries.removeValue(forKey: k)
+        save()
+    }
+
+    nonisolated private static func fetch(_ t: Track, key: String, quality: String?) async throws -> DownloadEntry? {
+        var url = try? await API.shared.streamURL(t, quality: quality)
+        if url == nil, quality != nil { url = try await API.shared.streamURL(t, quality: nil) }
+        guard let url else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue(API.userAgent, forHTTPHeaderField: "User-Agent")
+        let (tmp, resp) = try await URLSession.shared.download(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+        let ext = AudioFile.ext(contentType: http.value(forHTTPHeaderField: "Content-Type"), url: url)
+        let name = "\(key).\(ext)"
+        let dest = dir.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: tmp, to: dest)
+        let size = (try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        if size == 0 { try? FileManager.default.removeItem(at: dest); return nil }
+        return DownloadEntry(key: key, file: name, id: t.hash, title: t.displayTitle, artist: t.artist,
+                             album: t.album, coverUrl: t.coverUrl, durationMs: t.durationMillis)
+    }
+
+    private func load() {
+        guard let d = try? Data(contentsOf: manifest), let list = try? JSONDecoder().decode([DownloadEntry].self, from: d) else { return }
+        var m: [String: DownloadEntry] = [:]
+        for e in list where FileManager.default.fileExists(atPath: DownloadStore.dir.appendingPathComponent(e.file).path) { m[e.key] = e }
+        entries = m
+    }
+
+    private func save() {
+        if let d = try? JSONEncoder().encode(Array(entries.values)) { try? d.write(to: manifest, options: .atomic) }
+    }
+}
+
+enum AudioFile {
+    static func ext(contentType: String?, url: URL) -> String {
+        let t = (contentType ?? "").lowercased()
+        if t.contains("flac") { return "flac" }
+        if t.contains("mp4") || t.contains("aac") || t.contains("m4a") { return "m4a" }
+        if t.contains("ogg") || t.contains("opus") { return "ogg" }
+        if t.contains("wav") { return "wav" }
+        if t.contains("mpeg") || t.contains("mp3") { return "mp3" }
+        let e = url.pathExtension.lowercased()
+        return ["flac", "m4a", "mp3", "wav", "aac", "mp4"].contains(e) ? e : "mp3"
+    }
+}
