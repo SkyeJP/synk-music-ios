@@ -145,6 +145,7 @@ private struct TrackList: View {
 @MainActor
 final class HomeModel: ObservableObject {
     @Published var sections: [HomeSection]?
+    @Published var failed = false
     private static let cacheFile = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("home.json")
 
     init() {
@@ -156,18 +157,31 @@ final class HomeModel: ObservableObject {
     }
 
     func load() async {
-        guard let d = try? await API.shared.data(API.shared.request("library/home", query: ["limit": "14"])),
-              let fresh = try? JSONDecoder().decode(Keyed<HomeSection>.self, from: d) else {
-            if sections == nil { sections = [] }
-            return
+        failed = false
+        for attempt in 0..<2 {
+            var req = API.shared.request("library/home", query: ["limit": "14"])
+            req.timeoutInterval = 30
+            do {
+                let d = try await API.shared.data(req)
+                let fresh = try JSONDecoder().decode(Keyed<HomeSection>.self, from: d).items("sections")
+                if !fresh.isEmpty {
+                    sections = fresh
+                    try? d.write(to: HomeModel.cacheFile, options: .atomic)
+                    return
+                }
+            } catch {
+                DebugLog.shared.add("home: \(error.localizedDescription)")
+            }
+            if attempt == 0 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
         }
-        sections = fresh.items("sections")
-        try? d.write(to: HomeModel.cacheFile, options: .atomic)
+        failed = true
+        if sections == nil { sections = [] }
     }
 }
 
 struct HomeView: View {
     @StateObject private var model = HomeModel()
+    @EnvironmentObject private var net: NetworkMonitor
     @Environment(\.navigate) private var navigate
     @Environment(\.playTrack) private var play
 
@@ -175,8 +189,21 @@ struct HomeView: View {
         LargeTitlePage(title: "Home") {
             if let sections = model.sections {
                 if sections.isEmpty {
-                    Text("You're offline. Your downloads are in Library.").font(sans: 15).foregroundStyle(Theme.muted)
+                    if !net.online {
+                        Text("You're offline. Your downloads are in Library.").font(sans: 15).foregroundStyle(Theme.muted)
+                            .frame(maxWidth: .infinity).padding(.vertical, 96)
+                    } else {
+                        VStack(spacing: 14) {
+                            Text("Couldn't load Home.").font(sans: 15).foregroundStyle(Theme.muted)
+                            Button { Task { await model.load() } } label: {
+                                Text("Try again").font(sans: 15, 600).foregroundStyle(Theme.fg)
+                                    .padding(.horizontal, 20).frame(height: 40)
+                                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                            }
+                            .buttonStyle(PressStyle())
+                        }
                         .frame(maxWidth: .infinity).padding(.vertical, 96)
+                    }
                 }
                 ForEach(Array(sections.enumerated()), id: \.offset) { si, s in
                     SectionHead(s.title)
@@ -191,6 +218,7 @@ struct HomeView: View {
             }
         }
         .task { await model.load() }
+        .onChange(of: net.online) { _, on in if on && (model.sections?.isEmpty ?? true) { Task { await model.load() } } }
         .refreshable { await model.load() }
     }
 
