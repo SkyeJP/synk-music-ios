@@ -90,7 +90,7 @@ private final class LyricsLoader: ObservableObject {
 struct LyricsView: View {
     let track: Track
     var onSeek: ((Int) -> Void)?
-    var textSize: CGFloat = 26
+    var textSize: CGFloat = 30
     @StateObject private var loader = LyricsLoader()
     @EnvironmentObject private var player: PlayerController
     @EnvironmentObject private var cdc: CdcClient
@@ -135,7 +135,7 @@ struct LyricsContent: View {
     let synced: Bool
     let playing: Bool
     var onSeek: ((Int) -> Void)?
-    var textSize: CGFloat = 26
+    var textSize: CGFloat = 30
     @State private var items: [LyricItem] = []
     @State private var heights: [Int: CGFloat] = [:]
     @State private var viewport: CGFloat = 0
@@ -179,17 +179,19 @@ struct LyricsContent: View {
                     let near = abs(d) <= 1
                     itemView(item, index: i, active: i == active, now: (near || isDots(item)) ? now : (d < 0 ? Int.max / 4 : -1), dist: dist)
                         .background(GeometryReader { h in Color.clear.preference(key: HeightsKey.self, value: [i: h.size.height]) })
-                        .offset(y: target)
-                        .animation(.spring(response: 0.42 + Double(min(6, max(0, d))) * 0.06, dampingFraction: 0.92), value: target)
-                        .blur(radius: synced ? min(4, max(0, (dist - 1) * 1.2)) : 0)
+                        .blur(radius: synced && abs(d) < 12 ? min(4, max(0, (dist - 1) * 1.2)) : (synced ? 4 : 0))
+                        .animation(.easeInOut(duration: 0.4), value: active)
                 }
             }
+            .offset(y: target)
+            .animation(.spring(response: 0.55, dampingFraction: 0.9), value: active)
             .padding(.horizontal, 24)
             .frame(width: g.size.width, alignment: .topLeading)
             .onAppear { viewport = g.size.height }
             .onChange(of: g.size.height) { _, h in viewport = h }
         }
         .clipped()
+        .contentShape(Rectangle())
         .onPreferenceChange(HeightsKey.self) { v in MainActor.assumeIsolated { heights = v } }
     }
 

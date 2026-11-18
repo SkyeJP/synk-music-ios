@@ -61,13 +61,19 @@ struct FullPlayer: View {
                         }
                     } else {
                         HStack(spacing: 12) {
-                            Artwork(url: t.coverUrl, radius: 8).frame(width: 56, height: 56)
-                                .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { mode = .player } }
-                            VStack(alignment: .leading, spacing: 1) {
-                                Marquee(text: t.displayTitle, font: SynkFont.sans(16, 600))
-                                Text(t.artist).font(sans: 14).foregroundStyle(Theme.fg.opacity(0.65)).lineLimit(1)
+                            Button { withAnimation(.easeInOut(duration: 0.3)) { mode = .player; controlsHidden = false } } label: {
+                                HStack(spacing: 12) {
+                                    Artwork(url: t.coverUrl, radius: 8).frame(width: 56, height: 56)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Marquee(text: t.displayTitle, font: SynkFont.sans(16, 600))
+                                        Text(t.artist).font(sans: 14).foregroundStyle(Theme.fg.opacity(0.65)).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
                             }
-                            Spacer(minLength: 0)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Back to artwork")
                             headerButtons(t)
                         }
                         .padding(.top, 20)
