@@ -180,3 +180,58 @@ struct SuggestedSongs: View {
         loading = false
     }
 }
+
+/// Rename a playlist, change its description, make it public or private.
+struct EditPlaylistSheet: View {
+    let id: String
+    @State var name: String
+    @State var description: String
+    let onSaved: () -> Void
+    @State private var isPublic = false
+    @State private var saving = false
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+
+    init(id: String, name: String, description: String, onSaved: @escaping () -> Void) {
+        self.id = id
+        _name = State(initialValue: name)
+        _description = State(initialValue: description)
+        self.onSaved = onSaved
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") { TextField("Playlist name", text: $name) }
+                Section("Description") { TextField("Description", text: $description, axis: .vertical).lineLimit(3...6) }
+                Section { Toggle("Public", isOn: $isPublic).tint(Theme.fg) }
+                if let error { Section { Text(error).foregroundStyle(Theme.danger) } }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.base)
+            .navigationTitle("Edit Playlist")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saving = true
+                        Task {
+                            do {
+                                try await API.shared.updatePlaylist(id, name: name.trimmingCharacters(in: .whitespaces),
+                                                                    description: description, isPublic: isPublic)
+                                onSaved()
+                                dismiss()
+                            } catch {
+                                self.error = (error as? APIError)?.message ?? "Couldn't save."
+                            }
+                            saving = false
+                        }
+                    }
+                    .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}

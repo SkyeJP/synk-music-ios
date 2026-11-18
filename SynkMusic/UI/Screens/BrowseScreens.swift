@@ -712,6 +712,11 @@ struct PlaylistView: View {
     @State private var tracks: [Track] = []
     @State private var error = ""
     @State private var confirmDelete = false
+    @State private var sort = PlaylistSort.playlist
+    @State private var editing = false
+    @State private var collaborating = false
+    @State private var collaborator = ""
+    @State private var note: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -721,10 +726,11 @@ struct PlaylistView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.ink)
             } else if let p = info {
                 CollectionPage(cover: p.coverUrl, title: p.name, subtitle: p.owner ?? "", description: p.description,
-                               tracks: tracks, fromPlaylist: id, onRemoved: { Task { await load() } },
+                               tracks: sort.apply(tracks), fromPlaylist: id, onRemoved: { Task { await load() } },
                                footer: Durations.summary(tracks), shareURL: URL(string: "https://synkmusic.co.uk/playlist/\(id)"),
                                editable: isOwner(p) ? id : nil, onAdded: { Task { await load() } }) {
-                    PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p)) { confirmDelete = true }
+                    PlaylistMenuItems(id: id, tracks: tracks, isOwner: isOwner(p), sort: $sort,
+                                      onEdit: { editing = true }, onCollaborate: { collaborating = true }, onDelete: { confirmDelete = true })
                 }
                 .refreshable { await load() }
             } else {
@@ -732,6 +738,29 @@ struct PlaylistView: View {
             }
         }
         .task { if info == nil { await load() } }
+        .sheet(isPresented: $editing) {
+            if let p = info {
+                EditPlaylistSheet(id: id, name: p.name, description: p.description) { Task { await load() } }
+            }
+        }
+        .alert("Start Collaboration", isPresented: $collaborating) {
+            TextField("Username", text: $collaborator).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { collaborator = "" }
+            Button("Add") {
+                let name = collaborator.trimmingCharacters(in: .whitespaces)
+                collaborator = ""
+                guard !name.isEmpty else { return }
+                Task {
+                    do { try await API.shared.addCollaborator(id, username: name); note = "\(name) can now add songs to this playlist." }
+                    catch { note = (error as? APIError)?.message ?? "Couldn't add \(name)." }
+                }
+            }
+        } message: {
+            Text("They will be able to add songs to this playlist.")
+        }
+        .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
         .confirmationDialog("Delete this playlist?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Playlist", role: .destructive) {
                 Task {

@@ -217,6 +217,12 @@ extension API {
         let pl = o["playlist"] as? [String: Any] ?? o
         return (pl["id"] as? String) ?? (pl["_id"] as? String) ?? ""
     }
+    func updatePlaylist(_ id: String, name: String, description: String, isPublic: Bool) async throws {
+        try await sendVoid("playlists/\(id)", method: "PUT", body: ["name": name, "description": description, "isPublic": isPublic] as [String: Any])
+    }
+    func addCollaborator(_ id: String, username: String) async throws {
+        try await sendVoid("playlists/\(id)/collaborators", body: ["username": username])
+    }
     func deletePlaylist(_ id: String) async throws { try await sendVoid("playlists/\(id)", method: "DELETE", body: nil) }
     func addToPlaylist(_ id: String, hashes: [String]) async throws {
         try await sendVoid("playlists/\(id)/add", body: ["itemhash": hashes.joined(separator: ",")])

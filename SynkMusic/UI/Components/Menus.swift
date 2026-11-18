@@ -95,10 +95,15 @@ struct TrackMenuItems: View {
 struct AlbumMenuItems: View {
     let album: Album
     let tracks: [Track]
+    @ObservedObject private var downloads = DownloadStore.shared
 
     var body: some View {
+        let all = !tracks.isEmpty && tracks.allSatisfy { downloads.isDownloaded($0) }
+        let some = tracks.contains { downloads.isDownloaded($0) }
         ControlGroup {
-            Button { tracks.forEach { DownloadStore.shared.download($0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+            if !all {
+                Button { tracks.forEach { downloads.download($0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+            }
             Button { Task { try? await API.shared.likeItem(type: "album", hash: album.hash) } } label: { Label("Favourite", systemImage: "star") }
             ShareLink(item: shareURL("/album/\(album.hash)")) { Label("Share", systemImage: "square.and.arrow.up") }
         }
@@ -114,6 +119,27 @@ struct AlbumMenuItems: View {
                 }
             }
         }
+        if some {
+            Section {
+                Button { tracks.forEach { if downloads.isDownloaded($0) { downloads.remove($0) } } } label: {
+                    Label("Remove Download", systemImage: "xmark.circle")
+                }
+            }
+        }
+    }
+}
+
+enum PlaylistSort: String, CaseIterable {
+    case playlist = "Playlist Order", title = "Title", artist = "Artist", album = "Album", duration = "Duration"
+
+    func apply(_ tracks: [Track]) -> [Track] {
+        switch self {
+        case .playlist: return tracks
+        case .title: return tracks.sorted { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
+        case .artist: return tracks.sorted { $0.artist.localizedCaseInsensitiveCompare($1.artist) == .orderedAscending }
+        case .album: return tracks.sorted { $0.album.localizedCaseInsensitiveCompare($1.album) == .orderedAscending }
+        case .duration: return tracks.sorted { $0.durationSeconds < $1.durationSeconds }
+        }
     }
 }
 
@@ -121,20 +147,49 @@ struct PlaylistMenuItems: View {
     let id: String
     let tracks: [Track]
     let isOwner: Bool
+    @Binding var sort: PlaylistSort
+    let onEdit: () -> Void
+    let onCollaborate: () -> Void
     let onDelete: () -> Void
+    @ObservedObject private var downloads = DownloadStore.shared
 
     var body: some View {
+        let all = !tracks.isEmpty && tracks.allSatisfy { downloads.isDownloaded($0) }
+        let some = tracks.contains { downloads.isDownloaded($0) }
         ControlGroup {
-            Button { tracks.forEach { DownloadStore.shared.download($0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+            if !all {
+                Button { tracks.forEach { downloads.download($0) } } label: { Label("Download", systemImage: "arrow.down.circle") }
+            }
             ShareLink(item: shareURL("/playlist/\(id)")) { Label("Share", systemImage: "square.and.arrow.up") }
+        }
+        Section { AddToPlaylistMenu(tracks: tracks) }
+        Section {
+            if isOwner {
+                Button(action: onEdit) { Label("Edit", systemImage: "pencil") }
+                Button(action: onCollaborate) { Label("Start Collaboration", systemImage: "person.badge.plus") }
+            }
+            Menu {
+                Picker("Sort By", selection: $sort) {
+                    ForEach(PlaylistSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+            } label: {
+                Label("Sort By", systemImage: "arrow.up.arrow.down")
+            }
         }
         Section {
             Button { tracks.reversed().forEach { PlayerController.shared.addNext($0) } } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Button { tracks.forEach { PlayerController.shared.addToQueue($0) } } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
         }
-        if isOwner {
+        if some || isOwner {
             Section {
-                Button(role: .destructive, action: onDelete) { Label("Delete Playlist", systemImage: "trash") }
+                if some {
+                    Button { tracks.forEach { if downloads.isDownloaded($0) { downloads.remove($0) } } } label: {
+                        Label("Remove Download", systemImage: "xmark.circle")
+                    }
+                }
+                if isOwner {
+                    Button(role: .destructive, action: onDelete) { Label("Delete from Library", systemImage: "trash") }
+                }
             }
         }
     }
