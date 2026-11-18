@@ -618,6 +618,12 @@ struct LibraryPageView: View {
     @EnvironmentObject private var lib: LibraryModel
     @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.navigate) private var navigate
+    @State private var byTitle = false
+
+    private var loose: [Playlist] {
+        let l = lib.playlists.filter { $0.folder == nil }
+        return byTitle ? l.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } : l
+    }
 
     var body: some View {
         ScrollView {
@@ -664,7 +670,7 @@ struct LibraryPageView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    ForEach(lib.playlists.filter { $0.folder == nil }) { p in
+                    ForEach(loose) { p in
                         row(cover: p.coverUrl, round: false, title: p.name, sub: Format.plural(p.trackCount, "song", "songs"), size: 56) {
                             navigate(.playlist(p.id))
                         }
@@ -684,6 +690,21 @@ struct LibraryPageView: View {
         .background(Theme.ink)
         .navigationTitle(page.rawValue)
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            if page == .playlists {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { Sheets.shared.newPlaylistFor = [] } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("New Playlist")
+                    Menu {
+                        Picker("Sort By", selection: $byTitle) {
+                            Text("Recently Added").tag(false)
+                            Text("Title").tag(true)
+                        }
+                    } label: { Image(systemName: "line.3.horizontal.decrease") }
+                        .accessibilityLabel("Sort")
+                }
+            }
+        }
         .task { if lib.songs.isEmpty && lib.playlists.isEmpty { await lib.load() } }
         .refreshable { await lib.load() }
     }
