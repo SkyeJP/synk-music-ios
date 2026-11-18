@@ -54,7 +54,8 @@ Create an environment group named `mirror` in Codemagic with:
 | `MIRROR_USER`     | SSH user on the mirror                                        |
 | `MIRROR_PATH`     | Folder served as `/ios`, e.g. `/opt/repositories/hostedbysynk/ios` |
 
-`MIRROR_HOST` and `MIRROR_URL` default to `mirrors.gafftech.co.uk` and
+`MIRROR_HOST` and `MIRROR_URL` default to `37.221.198.246` (the server behind
+Cloudflare, which does not pass SSH) and
 `https://mirrors.gafftech.co.uk/ios`. Compiler errors are listed at the top of
 the "Build unsigned Release" step, and the full log is the `xcodebuild.log`
 artifact.
