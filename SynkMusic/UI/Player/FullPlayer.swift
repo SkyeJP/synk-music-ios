@@ -29,7 +29,7 @@ struct FullPlayer: View {
                 if mode == .player {
                     GeometryReader { g in
                         let w = g.size.width
-                        Artwork(url: t.coverUrl, radius: 0)
+                        Artwork(url: Covers.large(t.coverUrl), radius: 0)
                             .frame(width: w, height: w * 1.12)
                             .clipped()
                             .overlay(alignment: .bottom) {

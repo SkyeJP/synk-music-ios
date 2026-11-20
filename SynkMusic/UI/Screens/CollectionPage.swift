@@ -40,7 +40,7 @@ struct CollectionPage<MenuItems: View>: View {
         let width = UIScreen.main.bounds.width
         ScrollView {
             VStack(spacing: 0) {
-                Artwork(url: cover, radius: 0)
+                Artwork(url: Covers.large(cover), radius: 0)
                     .frame(width: width, height: width)
                     .overlay(alignment: .bottom) {
                         LinearGradient(colors: [.clear, tint], startPoint: .top, endPoint: .bottom).frame(height: width * 0.45)
