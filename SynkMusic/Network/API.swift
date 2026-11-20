@@ -177,6 +177,15 @@ extension API {
 
     // Catalog
     func search(_ q: String) async -> SearchResponse {
+        // One request for everything; servers without type=all answer with
+        // songs only (no "artists" key), so fall back to three requests.
+        if let d = try? await data(request("search", query: ["q": q, "type": "all", "limit": "20"])),
+           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any], obj["artists"] != nil,
+           let t = try? JSONDecoder().decode(Keyed<Track>.self, from: d),
+           let al = try? JSONDecoder().decode(Keyed<Album>.self, from: d),
+           let ar = try? JSONDecoder().decode(Keyed<Artist>.self, from: d) {
+            return SearchResponse(tracks: t.items("tracks"), albums: al.items("albums"), artists: ar.items("artists"))
+        }
         async let t: Flexible<Track>? = try? get("search", ["q": q, "type": "tracks", "limit": "20"])
         async let ar: Flexible<Artist>? = try? get("search", ["q": q, "type": "artists"])
         async let al: Flexible<Album>? = try? get("search", ["q": q, "type": "albums"])
