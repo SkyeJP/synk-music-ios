@@ -1,36 +1,11 @@
-# SYNK Music iOS CI. The build job requires a macOS runner with Xcode + XcodeGen
-# (brew install xcodegen). Secret detection runs on the shared Linux runners.
+# SYNK Music iOS CI. The app is built and published by Codemagic (codemagic.yaml)
+# on pushes to main; GitLab only runs secret detection on the shared runners.
 stages:
-  - build
   - test
   - secret-detection
 
 variables:
   SECRET_DETECTION_ENABLED: "true"
-
-build:ios:
-  stage: build
-  tags:
-    - macos
-  script:
-    - which xcodegen || brew install xcodegen
-    - xcodegen generate
-    - >-
-      xcodebuild
-      -project SynkMusic.xcodeproj
-      -scheme SynkMusic
-      -configuration Debug
-      -destination 'generic/platform=iOS Simulator'
-      -derivedDataPath build
-      CODE_SIGNING_ALLOWED=NO
-      build
-  artifacts:
-    paths:
-      - build/Build/Products/Debug-iphonesimulator/
-    expire_in: 1 day
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 secret_detection:
   stage: secret-detection
