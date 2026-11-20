@@ -198,11 +198,12 @@ extension API {
     func albumInfo(_ hash: String) async throws -> Album { try await get("albums/info", ["id": hash]) }
     func albumTracks(_ hash: String) async throws -> [Track] { try await list("albums/tracks", ["id": hash], key: "tracks") }
     func artistInfo(_ hash: String) async throws -> Artist { try await get("artists/info/\(hash)") }
+    // These answer with a bare array, which list(key:) cannot read.
     func artistTracks(_ hash: String) async throws -> [Track] {
-        try await list("artists/info/\(hash)/tracks", ["limit": "10"], key: "tracks")
+        let r: Flexible<Track> = try await get("artists/info/\(hash)/tracks", ["limit": "10"]); return r.items
     }
     func artistAlbums(_ hash: String) async throws -> [Album] {
-        try await list("artists/info/\(hash)/albums", ["limit": "25"], key: "albums")
+        let r: Flexible<Album> = try await get("artists/info/\(hash)/albums", ["limit": "25"]); return r.items
     }
 
     // Playlists
