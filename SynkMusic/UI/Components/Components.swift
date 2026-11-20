@@ -354,6 +354,8 @@ struct TrackRow: View {
     var showLike = false
     var fromPlaylist: String?
     var onRemoved: (() -> Void)?
+    /// Shown before the artist, as in "Song, Harry Styles" in search results.
+    var kind: String?
     let action: () -> Void
     @Environment(\.nowPlaying) private var now
 
@@ -385,7 +387,7 @@ struct TrackRow: View {
                     }
                 }
                 if !numbered {
-                    Text(track.artist).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55)).lineLimit(1)
+                    Text(kind.map { "\($0), \(track.artist)" } ?? track.artist).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55)).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
