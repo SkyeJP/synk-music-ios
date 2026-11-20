@@ -316,23 +316,44 @@ struct RadioView: View {
 
 // MARK: Search
 
+/// One row of search results: an artist, an album or a song.
+enum SearchItem: Identifiable {
+    case artist(Artist), album(Album), track(Track)
+
+    var id: String {
+        switch self {
+        case .artist(let a): return "ar:" + a.hash
+        case .album(let a): return "al:" + a.hash
+        case .track(let t): return "tr:" + t.hash + t.displayTitle
+        }
+    }
+}
+
+enum SearchScope: String, CaseIterable {
+    case top = "Top Results", artists = "Artists", albums = "Albums", songs = "Songs"
+}
+
 @MainActor
 final class SearchModel: ObservableObject {
     @Published var query = ""
     @Published var result: SearchResponse?
     @Published var loading = false
+    /// False while typing (suggestions), true once a search is run (full results).
+    @Published var submitted = false
+    @Published var scope: SearchScope = .top
     @Published var recent: [String] = UserDefaults.standard.stringArray(forKey: "synk.recentSearches") ?? []
     private(set) var term = ""
     private var job: Task<Void, Never>?
+    private var settingQuery = false
 
     func change(_ q: String) {
+        if settingQuery { settingQuery = false } else { submitted = false }
         job?.cancel()
         let t = q.trimmingCharacters(in: .whitespaces)
         job = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 250_000_000)
             if Task.isCancelled { return }
-            term = t
-            if t.count < 2 { result = nil; loading = false; return }
+            if t.count < 2 { term = t; result = nil; loading = false; return }
             loading = true
             var r = await API.shared.search(t)
             if Task.isCancelled { return }
@@ -342,9 +363,69 @@ final class SearchModel: ObservableObject {
                     $0.displayTitle.localizedCaseInsensitiveContains(t) || $0.artist.localizedCaseInsensitiveContains(t)
                 }
             }
+            term = t
             result = r
             loading = false
         }
+    }
+
+    /// Runs a search for `text`, as if typed and then Search pressed.
+    func submit(_ text: String? = nil) {
+        if let text, text != query {
+            settingQuery = true
+            query = text
+        }
+        submitted = true
+        scope = .top
+        remember(text ?? query)
+    }
+
+    /// Names that start with what was typed, to finish the search with one tap.
+    var suggestions: [String] {
+        guard let r = result, !term.isEmpty else { return [] }
+        let q = term.lowercased()
+        let names = r.artists.map(\.name) + r.albums.map(\.displayTitle) + r.tracks.map(\.displayTitle) + r.tracks.map(\.artist)
+        var seen = Set<String>()
+        var out: [String] = []
+        for n in names {
+            let l = n.lowercased()
+            guard l != q, SearchModel.matches(l, q), seen.insert(l).inserted else { continue }
+            out.append(l)
+            if out.count == 4 { break }
+        }
+        return out
+    }
+
+    /// Artists, albums and songs in one list: the best matching artist first,
+    /// then two songs to every album, then any other artists.
+    var topResults: [SearchItem] {
+        guard let r = result else { return [] }
+        let q = term.lowercased()
+        let lead = r.artists.firstIndex { SearchModel.matches($0.name.lowercased(), q) }
+        var out: [SearchItem] = []
+        if let lead { out.append(.artist(r.artists[lead])) }
+        var ti = 0, ai = 0
+        while ti < r.tracks.count || ai < r.albums.count {
+            for _ in 0..<2 where ti < r.tracks.count { out.append(.track(r.tracks[ti])); ti += 1 }
+            if ai < r.albums.count { out.append(.album(r.albums[ai])); ai += 1 }
+        }
+        for (i, a) in r.artists.enumerated() where i != lead { out.append(.artist(a)) }
+        return Array(out.prefix(30))
+    }
+
+    func items(_ s: SearchScope) -> [SearchItem] {
+        guard let r = result else { return [] }
+        switch s {
+        case .top: return topResults
+        case .artists: return r.artists.map { .artist($0) }
+        case .albums: return r.albums.map { .album($0) }
+        case .songs: return r.tracks.map { .track($0) }
+        }
+    }
+
+    /// The whole name, or any word in it, starts with `q`.
+    static func matches(_ name: String, _ q: String) -> Bool {
+        name.hasPrefix(q) || name.split(separator: " ").contains { $0.hasPrefix(q) }
     }
 
     func remember(_ s: String) {
@@ -362,6 +443,7 @@ final class SearchModel: ObservableObject {
 
 struct SearchView: View {
     @StateObject private var model = SearchModel()
+    @FocusState private var focused: Bool
     @Environment(\.navigate) private var navigate
     @Environment(\.playTrack) private var play
 
@@ -370,7 +452,8 @@ struct SearchView: View {
             // The search field lives in the Liquid Glass tab bar.
             page(field: false)
                 .searchable(text: $model.query, prompt: "Artists, Songs, Albums")
-                .onSubmit(of: .search) { model.remember(model.query) }
+                .searchFocused($focused)
+                .onSubmit(of: .search) { model.submit() }
         } else {
             page(field: true)
         }
@@ -388,7 +471,8 @@ struct SearchView: View {
                         .submitLabel(.search)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                        .onSubmit { model.remember(model.query) }
+                        .focused($focused)
+                        .onSubmit { model.submit() }
                     if !model.query.isEmpty {
                         Button { model.query = "" } label: {
                             SynkIcon(SynkIcons.plus, size: 14).rotationEffect(.degrees(45))
@@ -410,7 +494,24 @@ struct SearchView: View {
     }
 
     @ViewBuilder private var results: some View {
-        if model.result == nil && !model.loading && !model.recent.isEmpty {
+        let typed = model.query.trimmingCharacters(in: .whitespaces).count >= 2
+        if !typed {
+            recentSearches
+        } else if model.result == nil {
+            Loading()
+        } else if model.submitted {
+            scopes
+            itemRows(model.items(model.scope))
+            if model.result?.isEmpty == true { noResults }
+        } else {
+            suggestionRows
+            itemRows(Array(model.topResults.prefix(8)))
+            if model.result?.isEmpty == true { noResults }
+        }
+    }
+
+    @ViewBuilder private var recentSearches: some View {
+        if !model.recent.isEmpty {
             HStack {
                 Text("Recently Searched").font(sans: 20, 700).foregroundStyle(Theme.fg)
                 Spacer()
@@ -419,64 +520,102 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16).padding(.top, 16)
             ForEach(model.recent, id: \.self) { r in
-                Button { model.query = r } label: {
-                    HStack(spacing: 12) {
-                        SynkIcon(SynkIcons.search, size: 20, tint: Theme.fg.opacity(0.45))
-                        Text(r).font(sans: 17).foregroundStyle(Theme.fg)
-                        Spacer()
-                    }
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                    .hairline(32)
-                    .padding(.leading, 16)
-                }
-                .buttonStyle(.plain)
+                termRow(r) { pick(r) }
             }
         }
-        if model.loading && model.result == nil { Loading() }
-        if let r = model.result {
-            if let top = r.tracks.first {
-                SectionHead("Top Result")
-                Button { model.remember(model.term); play(top, r.tracks) } label: {
-                    HStack(spacing: 12) {
-                        Artwork(url: top.coverUrl, radius: 10).frame(width: 80, height: 80)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(top.displayTitle).font(sans: 19, 600).foregroundStyle(Theme.fg).lineLimit(1)
-                            Text("Song, \(top.artist)").font(sans: 14).foregroundStyle(Theme.fg.opacity(0.55)).lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.07)))
-                }
-                .buttonStyle(PressStyle())
-                .padding(.horizontal, 16)
+    }
+
+    private var suggestionRows: some View {
+        ForEach(model.suggestions, id: \.self) { s in
+            termRow(s, typed: model.term.lowercased()) { pick(s) }
+        }
+    }
+
+    /// A text-only row with a magnifying glass; the typed part stays bright,
+    /// the rest of the suggestion is dimmed.
+    private func termRow(_ text: String, typed: String = "", action: @escaping () -> Void) -> some View {
+        let head = typed.isEmpty || !text.hasPrefix(typed) ? "" : typed
+        let tail = String(text.dropFirst(head.count))
+        return Button(action: action) {
+            HStack(spacing: 12) {
+                SynkIcon(SynkIcons.search, size: 20, tint: Theme.fg.opacity(0.45))
+                Text("\(Text(head).foregroundStyle(Theme.fg))\(Text(tail).foregroundStyle(head.isEmpty ? Theme.fg : Theme.fg.opacity(0.6)))")
+                    .font(sans: 17).lineLimit(1)
+                Spacer()
             }
-            if !r.tracks.isEmpty {
-                SectionHead("Songs")
-                TrackList(tracks: r.tracks, limit: 8)
-            }
-            if !r.albums.isEmpty {
-                SectionHead("Albums")
-                Shelf {
-                    ForEach(Array(r.albums.enumerated()), id: \.offset) { _, a in
-                        ShelfCard(image: a.coverUrl, title: a.displayTitle, subtitle: a.artist) { navigate(.album(a.hash)) }
-                    }
-                }
-            }
-            if !r.artists.isEmpty {
-                SectionHead("Artists")
-                Shelf {
-                    ForEach(Array(r.artists.enumerated()), id: \.offset) { _, a in
-                        ShelfCard(image: a.coverUrl, title: a.name, subtitle: "", size: 120, round: true) { navigate(.artist(a.hash)) }
-                    }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .hairline(32)
+            .padding(.leading, 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var scopes: some View {
+        let shown = SearchScope.allCases.filter { $0 == .top || !model.items($0).isEmpty }
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(shown, id: \.self) { s in
+                    Chip(text: s.rawValue, active: model.scope == s) { model.scope = s }
                 }
             }
-            if r.isEmpty {
-                Text("No results for \"\(model.term)\".").font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55))
-                    .frame(maxWidth: .infinity).padding(.vertical, 40)
+            .padding(.horizontal, 16)
+        }
+        .padding(.top, 8).padding(.bottom, 8)
+    }
+
+    private func itemRows(_ items: [SearchItem]) -> some View {
+        let tracks = model.result?.tracks ?? []
+        return LazyVStack(spacing: 0) {
+            ForEach(items) { item in
+                switch item {
+                case .artist(let a):
+                    entityRow(image: a.coverUrl, round: true, title: a.name, subtitle: "Artist") { open(.artist(a.hash)) }
+                case .album(let a):
+                    entityRow(image: a.coverUrl, round: false, title: a.displayTitle,
+                              subtitle: a.artist.isEmpty ? "Album" : "Album, \(a.artist)") { open(.album(a.hash)) }
+                case .track(let t):
+                    TrackRow(track: t, kind: "Song") { model.remember(model.term); focused = false; play(t, tracks) }
+                }
             }
         }
+        .padding(.leading, 6)
+    }
+
+    /// An artist or album: artwork, name, what it is, and a chevron.
+    private func entityRow(image: String, round: Bool, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Artwork(url: image, radius: 8, round: round).frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(sans: 16).foregroundStyle(Theme.fg).lineLimit(1)
+                    Text(subtitle).font(sans: 13).foregroundStyle(Theme.fg.opacity(0.55)).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                SynkIcon(SynkIcons.chevronRight, size: 18, tint: Theme.fg.opacity(0.35))
+                    .frame(width: 40, height: 40)
+            }
+            .padding(.vertical, 7).padding(.horizontal, 10)
+            .contentShape(Rectangle())
+            .hairline(70)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var noResults: some View {
+        Text("No results for \"\(model.term)\".").font(sans: 15).foregroundStyle(Theme.fg.opacity(0.55))
+            .frame(maxWidth: .infinity).padding(.vertical, 40)
+    }
+
+    private func pick(_ text: String) {
+        focused = false
+        model.submit(text)
+    }
+
+    private func open(_ route: Route) {
+        model.remember(model.term)
+        focused = false
+        navigate(route)
     }
 }
 
@@ -965,7 +1104,7 @@ struct ArtistView: View {
         let w = UIScreen.main.bounds.width
         return ZStack(alignment: .bottom) {
             Color.white.opacity(0.06)
-            if let a = artist, !a.coverUrl.isEmpty { RemoteImage(url: a.coverUrl) }
+            if let a = artist, !a.coverUrl.isEmpty { RemoteImage(url: Covers.large(a.coverUrl)) }
             HStack(alignment: .bottom) {
                 Text(artist?.name ?? "").font(display: 34, 700).foregroundStyle(Theme.fg).lineLimit(2)
                 Spacer()
