@@ -69,6 +69,12 @@ enum Covers {
         return s
     }
     static func usable(_ s: String) -> Bool { !s.isEmpty && !s.contains("LEONARD") && !s.contains("generated") }
+    /// The same cover at 1400 px, for artwork that fills the screen width.
+    /// Library covers are 512 px unless asked for bigger.
+    static func large(_ s: String) -> String {
+        guard s.contains("/api/plex/art?"), !s.contains("size=") else { return s }
+        return s + "&size=1400"
+    }
 }
 
 struct ArtistRef: Codable, Hashable {

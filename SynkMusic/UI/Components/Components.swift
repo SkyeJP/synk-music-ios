@@ -237,7 +237,7 @@ struct CollectionHeader: View {
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { g in
-                Artwork(url: image, radius: 12, round: round)
+                Artwork(url: Covers.large(image), radius: 12, round: round)
                     .frame(width: g.size.width * 0.7, height: g.size.width * 0.7)
                     .shadow(color: .black.opacity(0.6), radius: 28, y: 12)
                     .frame(maxWidth: .infinity)

@@ -1104,7 +1104,7 @@ struct ArtistView: View {
         let w = UIScreen.main.bounds.width
         return ZStack(alignment: .bottom) {
             Color.white.opacity(0.06)
-            if let a = artist, !a.coverUrl.isEmpty { RemoteImage(url: a.coverUrl) }
+            if let a = artist, !a.coverUrl.isEmpty { RemoteImage(url: Covers.large(a.coverUrl)) }
             HStack(alignment: .bottom) {
                 Text(artist?.name ?? "").font(display: 34, 700).foregroundStyle(Theme.fg).lineLimit(2)
                 Spacer()
