@@ -57,6 +57,7 @@ final class Prefetcher {
     private var running: String?
 
     func update(window: [Track]) {
+        ImageCache.warm(window.flatMap { [$0.coverUrl, Covers.large($0.coverUrl)] })
         let quality = SettingsStore.shared.requestQuality
         let want = window.filter { !DownloadStore.shared.isDownloaded($0) && AudioCache.file($0.hash, quality: quality) == nil }
         let wanted = Set(want.map { $0.hash })

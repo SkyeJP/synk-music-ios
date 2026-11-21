@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CryptoKit
 
 private let imageMemory: NSCache<NSURL, UIImage> = {
     let c = NSCache<NSURL, UIImage>()
@@ -7,7 +8,8 @@ private let imageMemory: NSCache<NSURL, UIImage> = {
     return c
 }()
 
-/// Memory plus URLCache backed image loader with request coalescing.
+/// Memory, disk and network image loader with request coalescing. Covers stay on disk
+/// so skipping with a bad signal still shows them.
 actor ImageCache {
     static let shared = ImageCache()
     private var memory: NSCache<NSURL, UIImage> { imageMemory }
@@ -18,22 +20,70 @@ actor ImageCache {
         c.requestCachePolicy = .returnCacheDataElseLoad
         return URLSession(configuration: c)
     }()
+    private static let maxDiskBytes = 400 << 20
+    nonisolated static let dir: URL = {
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("covers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }()
+
+    private init() {
+        Task.detached(priority: .background) { ImageCache.trim() }
+    }
 
     nonisolated func cached(_ url: URL) -> UIImage? { imageMemory.object(forKey: url as NSURL) }
+
+    nonisolated static func file(_ url: URL) -> URL {
+        dir.appendingPathComponent(SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined())
+    }
+
+    /// Loads these covers into the cache ahead of time.
+    nonisolated static func warm(_ urls: [String]) {
+        let list = Set(urls.filter { !$0.isEmpty }.compactMap { URL(string: Covers.absolute($0)) })
+            .filter { !FileManager.default.fileExists(atPath: file($0).path) }
+        guard !list.isEmpty else { return }
+        Task.detached(priority: .utility) { for u in list { _ = await ImageCache.shared.image(u) } }
+    }
 
     func image(_ url: URL) async -> UIImage? {
         if let i = memory.object(forKey: url as NSURL) { return i }
         if let t = inflight[url] { return await t.value }
         let session = self.session
         let t = Task<UIImage?, Never> {
-            guard let res = try? await session.data(from: url), let img = UIImage(data: res.0) else { return nil }
+            let disk = ImageCache.file(url)
+            if let d = try? Data(contentsOf: disk), let img = UIImage(data: d) {
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: disk.path)
+                return img.preparingForDisplay() ?? img
+            }
+            guard let res = try? await session.data(from: url), (res.1 as? HTTPURLResponse)?.statusCode ?? 200 < 400,
+                  let img = UIImage(data: res.0) else { return nil }
+            try? res.0.write(to: disk, options: .atomic)
             return img.preparingForDisplay() ?? img
         }
         inflight[url] = t
-        let img = await t.value
+        var img = await t.value
         inflight[url] = nil
+        if img == nil, let small = URL(string: url.absoluteString.replacingOccurrences(of: "&size=1400", with: "")), small != url {
+            img = await image(small)
+        }
         if let img { memory.setObject(img, forKey: url as NSURL) }
         return img
+    }
+
+    private nonisolated static func trim() {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+        var items = files.compactMap { u -> (URL, Int, Date)? in
+            guard let v = try? u.resourceValues(forKeys: Set(keys)) else { return nil }
+            return (u, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
+        }
+        var total = items.reduce(0) { $0 + $1.1 }
+        items.sort { $0.2 < $1.2 }
+        for (u, size, _) in items where total > maxDiskBytes {
+            try? fm.removeItem(at: u)
+            total -= size
+        }
     }
 }
 

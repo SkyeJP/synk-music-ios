@@ -49,7 +49,10 @@ struct DownloadEntry: Codable, Hashable {
 @MainActor
 final class DownloadStore: ObservableObject {
     static let shared = DownloadStore()
-    @Published private(set) var entries: [String: DownloadEntry] = [:]
+    @Published private(set) var entries: [String: DownloadEntry] = [:] {
+        didSet { byId = Dictionary(entries.values.map { ($0.id, $0.key) }, uniquingKeysWith: { a, _ in a }) }
+    }
+    private var byId: [String: String] = [:]
     @Published private(set) var downloading: Set<String> = []
     /// 0 to 1 for songs being fetched right now; queued songs are in `downloading` only.
     @Published private(set) var progress: [String: Double] = [:]
@@ -78,7 +81,7 @@ final class DownloadStore: ObservableObject {
     func isDownloaded(_ t: Track) -> Bool { localURL(t) != nil }
 
     func localURL(_ t: Track) -> URL? {
-        guard let e = entries[key(t)] else { return nil }
+        guard let e = entries[key(t)] ?? byId[t.hash].flatMap({ entries[$0] }) else { return nil }
         let u = DownloadStore.dir.appendingPathComponent(e.file)
         return FileManager.default.fileExists(atPath: u.path) ? u : nil
     }
@@ -136,7 +139,7 @@ final class DownloadStore: ObservableObject {
         guard !tracks.isEmpty else { return 0 }
         let done = tracks.reduce(0.0) { sum, t in
             let k = key(t)
-            if entries[k] != nil { return sum + 1 }
+            if localURL(t) != nil { return sum + 1 }
             return sum + (progress[k] ?? 0)
         }
         return done / Double(tracks.count)
@@ -165,6 +168,7 @@ final class DownloadStore: ObservableObject {
             DebugLog.shared.add("downloaded \(t.displayTitle)", issue: false)
             entries[k] = entry
             save()
+            ImageCache.warm([entry.coverUrl, Covers.large(entry.coverUrl)])
         }
     }
 

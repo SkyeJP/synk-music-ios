@@ -373,6 +373,8 @@ struct SettingsView: View {
             nav("Equaliser", "Shape playback with a 10-band graphic EQ") { navigate(.equalizer) }
             SettingsLabel(text: "Downloads")
             nav("Downloaded songs", "Manage music saved for offline listening") { navigate(.downloads) }
+            SettingsLabel(text: "Connections")
+            DiscordRow()
             SettingsLabel(text: "App")
             nav("Diagnostics", "Recent playback and download problems, to copy and send") { navigate(.diagnostics) }
             SettingsCard {
