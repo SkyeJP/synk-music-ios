@@ -725,7 +725,7 @@ final class ListenTracker {
         accumMs = 0
         guard elapsed >= 3000, !t.artist.isEmpty, !t.displayTitle.isEmpty else { return }
         Task.detached {
-            await API.shared.logTrack(t.hash, seconds: elapsed / 1000)
+            await API.shared.logTrack(t, seconds: elapsed / 1000)
             if let isrc = t.isrc, !isrc.isEmpty { await API.shared.logAnalytics(t, isrc: isrc, listenedMs: elapsed) }
         }
     }

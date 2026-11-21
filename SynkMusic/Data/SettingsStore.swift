@@ -52,6 +52,7 @@ final class NetworkMonitor: ObservableObject {
         monitor.pathUpdateHandler = { [weak self] path in
             let on = path.status == .satisfied
             Task { @MainActor in if self?.online != on { self?.online = on } }
+            if on { Task { await PlayLog.shared.flush() } }
         }
         monitor.start(queue: DispatchQueue(label: "synk.net"))
     }

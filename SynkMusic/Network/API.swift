@@ -293,10 +293,11 @@ extension API {
             "album": t.album, "cover": t.coverUrl, "durationMs": t.durationMs,
         ] as [String: Any])
     }
-    func logTrack(_ hash: String, seconds: Int) async {
-        try? await sendVoid("analytics/track/log", body: [
-            "trackhash": hash, "source": "ios", "duration": seconds, "timestamp": Int(Date().timeIntervalSince1970),
-        ] as [String: Any])
+    func logTrack(_ t: Track, seconds: Int) async {
+        await PlayLog.shared.add([
+            "trackhash": t.hash, "source": "ios", "duration": seconds, "timestamp": Int(Date().timeIntervalSince1970),
+            "name": t.displayTitle, "artist": t.artist, "album": t.album, "durationMs": t.durationMillis,
+        ])
     }
     func logAnalytics(_ t: Track, isrc: String, listenedMs: Int) async {
         try? await sendVoid("analytics", body: [
@@ -334,4 +335,35 @@ extension API {
         let p: P = try await get("tuning/profile", ["id": id])
         return (p.preamp, p.filters)
     }
+}
+
+/// Plays waiting to reach the server, kept on disk so plays made offline still count and scrobble later.
+actor PlayLog {
+    static let shared = PlayLog()
+    private let key = "synk.pendingPlays"
+    private var flushing = false
+
+    func add(_ play: [String: Any]) async {
+        save(Array((pending() + [play]).suffix(1000)))
+        await flush()
+    }
+
+    func flush() async {
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        while let next = pending().first {
+            do {
+                try await API.shared.sendVoid("analytics/track/log", body: next)
+            } catch let e as APIError where e.status >= 400 && e.status < 500 && e.status != 401 && e.status != 429 {
+                DebugLog.log("dropped queued play: \(e.status)")
+            } catch {
+                return
+            }
+            save(Array(pending().dropFirst()))
+        }
+    }
+
+    private func pending() -> [[String: Any]] { UserDefaults.standard.array(forKey: key) as? [[String: Any]] ?? [] }
+    private func save(_ q: [[String: Any]]) { UserDefaults.standard.set(q, forKey: key) }
 }

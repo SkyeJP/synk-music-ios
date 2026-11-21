@@ -165,6 +165,7 @@ final class DownloadStore: ObservableObject {
             DebugLog.shared.add("downloaded \(t.displayTitle)", issue: false)
             entries[k] = entry
             save()
+            ImageCache.warm([entry.coverUrl, Covers.large(entry.coverUrl)])
         }
     }
 
